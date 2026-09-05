@@ -15,6 +15,7 @@ class SpecEntity(BaseModel):
     id: str
     statement: str = Field(min_length=1, max_length=2_000)
     evidence_ids: tuple[str, ...] = ()
+    lifecycle: Literal["active", "retired"] = "active"
 
 
 class Goal(SpecEntity):
@@ -119,6 +120,7 @@ class Specification(BaseModel):
     title: str = Field(min_length=1, max_length=200)
     created_at: AwareDatetime
     updated_at: AwareDatetime
+    change_reason: str = Field(default="创建初始 Spec", min_length=1, max_length=1_000)
     goals: tuple[Goal, ...] = ()
     scope: tuple[ScopeItem, ...] = ()
     requirements: tuple[Requirement, ...] = ()
@@ -146,7 +148,8 @@ class Specification(BaseModel):
         if len(entity_ids) != len(set(entity_ids)):
             raise ValueError("同一个 Spec 中的实体 ID 必须唯一")
 
-        evidence_ids = {item.id for item in self.evidence}
+        evidence_by_id = {item.id: item for item in self.evidence}
+        evidence_ids = set(evidence_by_id)
         for entity in entities:
             if isinstance(entity, Evidence):
                 continue
@@ -169,6 +172,17 @@ class Specification(BaseModel):
         for decision in self.decisions:
             if decision.supersedes_id not in decision_ids | {None}:
                 raise ValueError(f"决策 {decision.id} 引用了不存在的旧 Decision")
+            # 决策者属于信任边界：模型不能仅凭仓库内容伪造“用户已经确认”。
+            referenced_kinds = {
+                evidence_by_id[evidence_id].kind for evidence_id in decision.evidence_ids
+            }
+            if decision.made_by == "user" and not referenced_kinds & {
+                "user_statement",
+                "clarification",
+            }:
+                raise ValueError(f"用户决策 {decision.id} 必须引用用户陈述或澄清回答")
+            if decision.made_by == "project" and "repository" not in referenced_kinds:
+                raise ValueError(f"项目决策 {decision.id} 必须引用仓库证据")
         return self
 
 

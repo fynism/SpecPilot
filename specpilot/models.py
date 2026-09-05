@@ -25,6 +25,10 @@ class ToolInput(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
 
 
+class EmptyInput(ToolInput):
+    """表示无需参数、但仍要求模型传入空对象的工具输入。"""
+
+
 class ClarificationOption(BaseModel):
     """A single user-selectable answer and its most important consequence."""
 

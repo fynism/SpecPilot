@@ -17,6 +17,7 @@ from pydantic import ValidationError
 
 from specpilot.clarification import ClarificationPresenter, ClarificationService
 from specpilot.models import (
+    EmptyInput,
     RegisteredTool,
     RequestClarificationInput,
     ToolCall,
@@ -28,6 +29,7 @@ from specpilot.repository import (
     RepositoryReader,
     SearchRepositoryInput,
 )
+from specpilot.spec_tools import ApplySpecPatchInput, SpecToolService
 
 
 class ToolRegistry:
@@ -104,6 +106,7 @@ def build_default_registry(
     clarification_presenter: ClarificationPresenter,
     event_dispatcher: Callable[..., object] | None = None,
     workspace_root: Path | None = None,
+    spec_tools: SpecToolService | None = None,
 ) -> ToolRegistry:
     """集中装配 SpecPilot MVP 默认开放的最小工具集合。"""
 
@@ -148,5 +151,25 @@ def build_default_registry(
             input_model=RequestClarificationInput,
         ),
         clarification_service.request,
+    )
+    spec_service = spec_tools or SpecToolService.create()
+    registry.register(
+        ToolSpec(
+            name="get_spec",
+            description="读取当前 Specification 最新版本的完整结构化事实。",
+            input_model=EmptyInput,
+        ),
+        spec_service.get_spec,
+    )
+    registry.register(
+        ToolSpec(
+            name="apply_spec_patch",
+            description=(
+                "通过一组带类型的语义操作原子更新当前 Specification；必须先用 get_spec "
+                "取得 expected_version，不能物理删除历史实体。"
+            ),
+            input_model=ApplySpecPatchInput,
+        ),
+        spec_service.apply_spec_patch,
     )
     return registry

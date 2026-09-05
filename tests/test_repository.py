@@ -39,6 +39,8 @@ def test_default_registry_only_exposes_read_only_repository_and_clarification_to
         "search_repository",
         "read_repository_file",
         "request_clarification",
+        "get_spec",
+        "apply_spec_patch",
     }
 
 
