@@ -41,7 +41,7 @@ def main() -> None:
     print("输入一个问题，按Enter发送。输入q退出。")
     print("Enter a question, press Enter to send. Type q to quit.\n")
 
-    # history 是当前 Demo 的会话状态；未来会由持久化 Session 对象替代。
+    #TODO history 是当前 Demo 的会话状态；未来会由持久化 Session 对象替代。
     history: list[dict[str, Any]] = []
     while True:
         try:

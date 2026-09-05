@@ -43,7 +43,7 @@ TOOL_EXECUTOR = ToolExecutor(TOOL_REGISTRY, HOOKS.trigger)
 
 
 def agent_loop(messages: list[dict[str, Any]]) -> None:
-    """运行一个完整 Agent 回合，直到模型不再请求工具。"""
+    """运行一个完整 Agent Loop，直到模型不再请求工具。"""
 
     while True:
         # 每轮都携带完整消息和当前工具声明，让模型基于最新工具结果决定下一步。
