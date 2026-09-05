@@ -10,3 +10,6 @@ __pycache__/
 *.egg-info/
 build/
 dist/
+
+# 持久化的 Spec 文件
+.specpilot/

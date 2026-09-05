@@ -9,10 +9,10 @@
     Agent Loop 应保持框架无关，不直接包含具体 Spec、Skill 或 MCP 的业务判断。
 """
 
-from typing import Any
+from typing import Any, Literal
 
 from specpilot.clarification import ConsoleClarificationPresenter
-from specpilot.config import API_KEY, BASE_URL, MODEL
+from specpilot.config import API_KEY, BASE_URL, MAX_TOOL_USE_TURNS, MODEL
 from specpilot.hooks import build_default_hooks
 from specpilot.model_client import AnthropicModelClient, ToolUseBlock
 from specpilot.tools import ToolExecutor, build_default_registry
@@ -42,9 +42,13 @@ TOOL_REGISTRY = build_default_registry(ConsoleClarificationPresenter(), HOOKS.tr
 TOOL_EXECUTOR = ToolExecutor(TOOL_REGISTRY, HOOKS.trigger)
 
 
-def agent_loop(messages: list[dict[str, Any]]) -> None:
+AgentLoopStopReason = Literal["model_complete", "max_tool_use_turns"]
+
+
+def agent_loop(messages: list[dict[str, Any]]) -> AgentLoopStopReason:
     """运行一个完整 Agent Loop，直到模型不再请求工具。"""
 
+    tool_use_turns = 0
     while True:
         # 每轮都携带完整消息和当前工具声明，让模型基于最新工具结果决定下一步。
         response_content = CLIENT.create_message(
@@ -65,7 +69,7 @@ def agent_loop(messages: list[dict[str, Any]]) -> None:
             if force:
                 messages.append({"role": "user", "content": force})
                 continue
-            return
+            return "model_complete"
 
         # 同一模型响应可能包含多个工具调用；统一收集后作为一个 user turn 回传。
         results = []
@@ -82,3 +86,8 @@ def agent_loop(messages: list[dict[str, Any]]) -> None:
             )
 
         messages.append({"role": "user", "content": results})
+        tool_use_turns += 1
+        # 一次响应中的并行工具调用属于同一轮；执行完上限轮次后保留完整结果再暂停，
+        # 避免留下没有对应 tool_result 的非法消息历史。
+        if tool_use_turns >= MAX_TOOL_USE_TURNS:
+            return "max_tool_use_turns"

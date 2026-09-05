@@ -123,8 +123,9 @@ def test_agent_loop_runs_tools_until_a_plain_response(monkeypatch: Any, tmp_path
     monkeypatch.setattr(agent, "TOOL_EXECUTOR", executor)
     history: list[dict[str, Any]] = [{"role": "user", "content": "增加导出功能"}]
 
-    agent.agent_loop(history)
+    stop_reason = agent.agent_loop(history)
 
+    assert stop_reason == "model_complete"
     assert client.call_count == 7
     assert len(presenter.requests) == 2
     assert spec_service.current_spec().version == 2
@@ -138,3 +139,40 @@ def test_agent_loop_runs_tools_until_a_plain_response(monkeypatch: Any, tmp_path
     assert tool_result_ids == ["t1", "t2", "t3", "t4", "t5", "t6"]
     assert history[-1]["role"] == "assistant"
     assert history[-1]["content"][0]["text"] == "需求已经完成澄清并通过校验。"
+
+
+def test_agent_loop_stops_after_configured_tool_use_turns(monkeypatch: Any, tmp_path: Any) -> None:
+    """达到工具轮次上限后保留最后一轮结果，并把控制权交还 CLI。"""
+
+    presenter = QueuePresenter([])
+    hooks = HookRegistry()
+    registry = build_default_registry(presenter, hooks.trigger, tmp_path)
+    executor = ToolExecutor(registry, hooks.trigger)
+    responses: list[tuple[ModelBlock, ...]] = [
+        (
+            tool_call("t1", "list_repository_files", {}),
+            tool_call("t2", "get_spec", {}),
+        ),
+        (tool_call("t3", "validate_spec", {}),),
+        (TextBlock(text="已继续处理"),),
+    ]
+    client = ScriptedClient(responses)
+    monkeypatch.setattr(agent, "CLIENT", client)
+    monkeypatch.setattr(agent, "HOOKS", hooks)
+    monkeypatch.setattr(agent, "TOOL_REGISTRY", registry)
+    monkeypatch.setattr(agent, "TOOL_EXECUTOR", executor)
+    monkeypatch.setattr(agent, "MAX_TOOL_USE_TURNS", 2)
+    history: list[dict[str, Any]] = [{"role": "user", "content": "整理需求"}]
+
+    stop_reason = agent.agent_loop(history)
+
+    assert stop_reason == "max_tool_use_turns"
+    assert client.call_count == 2
+    assert [block["tool_use_id"] for block in history[-1]["content"]] == ["t3"]
+
+    history.append({"role": "user", "content": "继续整理"})
+    resumed_reason = agent.agent_loop(history)
+
+    assert resumed_reason == "model_complete"
+    assert client.call_count == 3
+    assert history[-1]["content"][0]["text"] == "已继续处理"

@@ -68,8 +68,11 @@ def main() -> None:
             break
 
         history.append({"role": "user", "content": query})
-        agent_loop(history)
-        print_final_response(history)
+        stop_reason = agent_loop(history)
+        if stop_reason == "max_tool_use_turns":
+            print("本轮已达到工具调用轮次上限。已有结果已保留，你可以继续下一轮对话。")
+        else:
+            print_final_response(history)
         print()
 
 

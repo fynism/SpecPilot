@@ -28,9 +28,9 @@ API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
 BASE_URL = os.getenv("ANTHROPIC_BASE_URL")
 MODEL = os.getenv("MODEL_ID", "")
 try:
-    MAX_TURNS = int(os.getenv("MAX_TURNS", "15"))
+    MAX_TOOL_USE_TURNS = int(os.getenv("MAX_TOOL_USE_TURNS", "20"))
 except ValueError:
-    MAX_TURNS = 15
+    MAX_TOOL_USE_TURNS = 20
 
 
 @dataclass(frozen=True)
@@ -40,7 +40,7 @@ class Settings:
     api_key: str
     model: str
     base_url: str | None
-    max_turns: int
+    max_tool_use_turns: int
 
 
 def load_settings() -> Settings:
@@ -55,14 +55,14 @@ def load_settings() -> Settings:
     if not model:
         raise RuntimeError(f"缺少 MODEL_ID，请在 {ENV_FILE} 中配置")
     try:
-        max_turns = int(os.getenv("MAX_TURNS", "15"))
+        max_tool_use_turns = int(os.getenv("MAX_TOOL_USE_TURNS", "20"))
     except ValueError as exc:
-        raise RuntimeError("MAX_TURNS 必须是整数") from exc
-    if max_turns < 1:
-        raise RuntimeError("MAX_TURNS 必须大于 0")
+        raise RuntimeError("MAX_TOOL_USE_TURNS 必须是整数") from exc
+    if max_tool_use_turns < 1:
+        raise RuntimeError("MAX_TOOL_USE_TURNS 必须大于 0")
     return Settings(
         api_key=api_key,
         model=model,
         base_url=os.getenv("ANTHROPIC_BASE_URL"),
-        max_turns=max_turns,
+        max_tool_use_turns=max_tool_use_turns,
     )

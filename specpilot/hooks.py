@@ -12,7 +12,7 @@
 from collections.abc import Callable
 from typing import Any
 
-from specpilot.config import MAX_TURNS, WORKSPACE_ROOT
+from specpilot.config import WORKSPACE_ROOT
 from specpilot.models import ToolCall
 
 Hook = Callable[..., Any]
@@ -74,9 +74,7 @@ def summary_hook(messages: list[dict[str, Any]]) -> None:
     print(f"\033[90m[HOOK] Stop: session used {tool_count} tool calls\033[0m")
 
 
-def build_default_hooks(
-    workspace_root: str = str(WORKSPACE_ROOT), max_turns: int = MAX_TURNS
-) -> HookRegistry:
+def build_default_hooks(workspace_root: str = str(WORKSPACE_ROOT)) -> HookRegistry:
     """装配默认 Hook，并集中体现它们的执行顺序。"""
 
     # 装配与 Hook 定义分离，未来测试或其他前端可创建不同的 Hook 组合。
@@ -87,17 +85,7 @@ def build_default_hooks(
 
         print(f"\033[90m[HOOK] UserPromptSubmit: working in {workspace_root}\033[0m")
 
-    def enforce_max_turns(messages: list[dict[str, Any]], query: str) -> str | None:
-        """达到配置的用户轮数时返回停止信号。"""
-
-        turns = sum(1 for message in messages if message["role"] == "user")
-        if turns >= max_turns:
-            print(f"\033[31m> 达到最大对话轮数 {turns}/{max_turns}, 正在停止...\033[0m")
-            return "stop"
-        return None
-
     hooks.register("UserPromptSubmit", show_workspace)
-    hooks.register("UserPromptSubmit", enforce_max_turns)
     hooks.register("PreToolUse", log_hook)
     hooks.register("PostToolUse", large_output_hook)
     hooks.register("Stop", summary_hook)
