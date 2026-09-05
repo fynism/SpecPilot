@@ -16,7 +16,6 @@ from specpilot.config import MAX_TURNS, NOTES_DIR
 from specpilot.models import ToolCall
 from specpilot.policy import ask_user, check_deny_list, check_rules
 
-
 Hook = Callable[..., Any]
 
 
@@ -32,6 +31,9 @@ class HookRegistry:
             "PreToolUse": [],
             "PostToolUse": [],
             "Stop": [],
+            "ClarificationRequested": [],
+            "ClarificationAnswered": [],
+            "ClarificationCancelled": [],
         }
 
     def register(self, event: str, callback: Hook) -> None:
@@ -57,9 +59,7 @@ def context_inject_hook(messages: list[dict[str, Any]], query: str) -> None:
     print(f"\033[90m[HOOK] UserPromptSubmit: working in {NOTES_DIR}\033[0m")
 
 
-def max_turns_counter_hook(
-    messages: list[dict[str, Any]], query: str
-) -> str | None:
+def max_turns_counter_hook(messages: list[dict[str, Any]], query: str) -> str | None:
     """达到配置的 user-role 消息数量时，向 CLI 返回停止信号。"""
     turns = sum(1 for message in messages if message["role"] == "user")
     if turns >= MAX_TURNS:
@@ -100,11 +100,7 @@ def summary_hook(messages: list[dict[str, Any]]) -> None:
     tool_count = sum(
         1
         for message in messages
-        for block in (
-            message.get("content")
-            if isinstance(message.get("content"), list)
-            else []
-        )
+        for block in (message.get("content") if isinstance(message.get("content"), list) else [])
         if isinstance(block, dict) and block.get("type") == "tool_result"
     )
     print(f"\033[90m[HOOK] Stop: session used {tool_count} tool calls\033[0m")

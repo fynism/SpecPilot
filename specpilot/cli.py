@@ -36,16 +36,16 @@ def print_final_response(history: list[dict[str, Any]]) -> None:
 
 def main() -> None:
     """启动交互会话并在多次用户输入之间保留消息历史。"""
-    print("MyAgent: 一个基于Anthropic Claude的笔记整理Agent")
-    print("MyAgent: A note-organizing agent powered by Anthropic Claude\n")
+    print("SpecPilot: 通过结构化澄清帮助你定义软件需求")
+    print("SpecPilot: Clarify software requirements before implementation\n")
     print("输入一个问题，按Enter发送。输入q退出。")
     print("Enter a question, press Enter to send. Type q to quit.\n")
 
-    #TODO history 是当前 Demo 的会话状态；未来会由持久化 Session 对象替代。
+    # history 是当前 CLI 会话的多轮模型上下文；结构化 Spec 状态将独立维护。
     history: list[dict[str, Any]] = []
     while True:
         try:
-            query = input("\033[36mMyAgent >> \033[0m")
+            query = input("\033[36mSpecPilot >> \033[0m")
         except (EOFError, KeyboardInterrupt):
             break
 

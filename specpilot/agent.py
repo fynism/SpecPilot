@@ -13,21 +13,22 @@ from typing import Any
 
 from anthropic import Anthropic
 
+from specpilot.clarification import ConsoleClarificationPresenter
 from specpilot.config import API_KEY, BASE_URL, MODEL
 from specpilot.hooks import build_default_hooks
 from specpilot.tools import ToolExecutor, build_default_registry
 
-
 # 系统提示只描述 Agent 的角色与工具使用边界；未来可由基础提示和按需 Skill 组合。
-SYSTEM = """You are a note-organizing agent.
+SYSTEM = """You are SpecPilot, a requirements-clarification agent for software projects.
 
-For listing, searching, or reading notes, you MUST use list_notes,
-search_notes, or read_notes.
+Investigate available project evidence before asking questions. When a high-impact
+requirement ambiguity cannot be resolved from evidence, use request_clarification.
+Provide 2-5 mutually exclusive options, exactly one recommended option, the main
+consequence of each option, and a concise reason for your recommendation. You may
+call request_clarification multiple times, but ask one question at a time.
 
 Use pwsh only when the user explicitly requests PowerShell functionality
 and no specialized tool can complete the task.
-
-Do not claim to have read a note unless a tool returned it.
 """
 
 # 依赖在模块装配阶段创建，保持与原 Demo 相同的启动行为。
@@ -38,7 +39,7 @@ if BASE_URL:
 # 这些是 CLI 默认运行时依赖。未来可用 AgentRuntime 对象封装，便于测试和多会话隔离。
 CLIENT = Anthropic(**client_options)
 HOOKS = build_default_hooks()
-TOOL_REGISTRY = build_default_registry()
+TOOL_REGISTRY = build_default_registry(ConsoleClarificationPresenter(), HOOKS.trigger)
 TOOL_EXECUTOR = ToolExecutor(TOOL_REGISTRY, HOOKS.trigger)
 
 
@@ -57,9 +58,7 @@ def agent_loop(messages: list[dict[str, Any]]) -> None:
 
         # 先保存模型原始内容，保证后续工具结果能通过 tool_use_id 正确对应。
         messages.append({"role": "assistant", "content": response.content})
-        tool_calls = [
-            block for block in response.content if block.type == "tool_use"
-        ]
+        tool_calls = [block for block in response.content if block.type == "tool_use"]
         if not tool_calls:
             # Stop Hook 可返回一条新的用户消息强制继续，例如执行收尾检查。
             force = HOOKS.trigger("Stop", messages)
@@ -73,10 +72,7 @@ def agent_loop(messages: list[dict[str, Any]]) -> None:
         for block in tool_calls:
             print(f"\033[33m> {block.name}({block.input})\033[0m")
             output = TOOL_EXECUTOR.execute(block.name, block.input)
-            print(
-                f"\033[34m {output[:200]}\n"
-                f"{'...' if len(output) > 200 else ''}\n\033[0m"
-            )
+            print(f"\033[34m {output[:200]}\n{'...' if len(output) > 200 else ''}\n\033[0m")
             results.append(
                 {
                     "type": "tool_result",

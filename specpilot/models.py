@@ -10,9 +10,10 @@
 """
 
 from collections.abc import Callable
-from typing import Any
+from typing import Any, Literal
+from uuid import uuid4
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class ToolInput(BaseModel):
@@ -46,6 +47,86 @@ class PwshInput(ToolInput):
     """PowerShell 工具的参数，具体命令还需通过安全策略检查。"""
 
     command: str = Field(min_length=1, description="PowerShell command to execute.")
+
+
+class ClarificationOption(BaseModel):
+    """A single user-selectable answer and its most important consequence."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+
+    id: str = Field(pattern=r"^[a-z][a-z0-9_]*$", max_length=64)
+    label: str = Field(min_length=1, max_length=80)
+    description: str = Field(min_length=1, max_length=300)
+
+
+class RequestClarificationInput(ToolInput):
+    """Strict model-generated input for a requirement clarification request."""
+
+    question: str = Field(min_length=1, max_length=500)
+    reason: str = Field(min_length=1, max_length=500)
+    options: list[ClarificationOption] = Field(min_length=2, max_length=5)
+    recommended_option_id: str = Field(pattern=r"^[a-z][a-z0-9_]*$", max_length=64)
+    recommendation_reason: str = Field(min_length=1, max_length=500)
+    allow_custom_answer: bool = True
+
+    @model_validator(mode="after")
+    def validate_option_references(self) -> "RequestClarificationInput":
+        """Require unique option IDs and a recommendation that references an option."""
+
+        option_ids = [option.id for option in self.options]
+        if len(option_ids) != len(set(option_ids)):
+            raise ValueError("clarification option IDs must be unique")
+        if self.recommended_option_id not in option_ids:
+            raise ValueError("recommended_option_id must reference an existing option")
+        return self
+
+
+class ClarificationRequest(RequestClarificationInput):
+    """A validated clarification request with a runtime-assigned stable ID."""
+
+    request_id: str = Field(
+        default_factory=lambda: f"Q-{uuid4().hex[:12]}",
+        pattern=r"^Q-[0-9a-f]{12}$",
+    )
+
+
+class ClarificationAnswer(BaseModel):
+    """A user-confirmed option or custom answer returned to the model."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+
+    request_id: str
+    selected_option_id: str | None = None
+    custom_answer: str | None = Field(default=None, min_length=1, max_length=1000)
+    source: Literal["user"] = "user"
+
+    @model_validator(mode="after")
+    def validate_exactly_one_answer(self) -> "ClarificationAnswer":
+        """Reject missing or ambiguous answers."""
+
+        has_option = self.selected_option_id is not None
+        has_custom = self.custom_answer is not None
+        if has_option == has_custom:
+            raise ValueError("provide exactly one of selected_option_id or custom_answer")
+        return self
+
+
+class ClarificationOutcome(BaseModel):
+    """Structured tool result for either an answered or cancelled request."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+
+    status: Literal["answered", "cancelled"]
+    request_id: str
+    answer: ClarificationAnswer | None = None
+
+    @model_validator(mode="after")
+    def validate_status_payload(self) -> "ClarificationOutcome":
+        """Keep status and answer presence consistent."""
+
+        if (self.status == "answered") != (self.answer is not None):
+            raise ValueError("answered outcomes require an answer; cancelled outcomes forbid one")
+        return self
 
 
 class ToolSpec(BaseModel):

@@ -16,12 +16,14 @@ from typing import Any
 
 from pydantic import ValidationError
 
+from specpilot.clarification import ClarificationPresenter, ClarificationService
 from specpilot.config import NOTES_DIR
 from specpilot.models import (
     EmptyInput,
     PwshInput,
     ReadNotesInput,
     RegisteredTool,
+    RequestClarificationInput,
     SearchNotesInput,
     ToolCall,
     ToolSpec,
@@ -103,9 +105,7 @@ def list_notes(_: EmptyInput) -> str:
     if not NOTES_DIR.is_dir():
         return f"No notes directory exists yet: {NOTES_DIR}"
     notes = sorted(
-        path.relative_to(NOTES_DIR).as_posix()
-        for path in NOTES_DIR.rglob("*.md")
-        if path.is_file()
+        path.relative_to(NOTES_DIR).as_posix() for path in NOTES_DIR.rglob("*.md") if path.is_file()
     )
     return "\n".join(notes) if notes else "(no Markdown notes found)"
 
@@ -117,8 +117,7 @@ def search_notes(tool_input: SearchNotesInput) -> str:
     notes = sorted(
         path.relative_to(NOTES_DIR).as_posix()
         for path in NOTES_DIR.rglob("*.md")
-        if path.is_file()
-        and tool_input.query.lower() in path.read_text(encoding="utf-8").lower()
+        if path.is_file() and tool_input.query.lower() in path.read_text(encoding="utf-8").lower()
     )
     return "\n".join(notes) if notes else "(no Markdown notes found)"
 
@@ -141,8 +140,11 @@ def run_pwsh(tool_input: PwshInput) -> str:
         # 使用参数数组而非拼接启动命令；实际脚本文本作为 pwsh 的单独参数传入。
         result = subprocess.run(
             ["pwsh", "-NoProfile", "-Command", tool_input.command],
-            cwd=os.getcwd(), capture_output=True, text=True,
-            encoding="utf-8", errors="replace",
+            cwd=os.getcwd(),
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
         )
     except FileNotFoundError:
         return "Error: pwsh was not found on PATH"
@@ -153,25 +155,59 @@ def run_pwsh(tool_input: PwshInput) -> str:
     return f"Exit code: {result.returncode}\n{output}"
 
 
-def build_default_registry() -> ToolRegistry:
+def build_default_registry(
+    clarification_presenter: ClarificationPresenter,
+    event_dispatcher: Callable[..., object] | None = None,
+) -> ToolRegistry:
     """集中装配原 Demo 的默认工具集合。"""
 
     # 通过工厂创建实例，测试、Skill 或不同运行模式可拥有彼此隔离的注册表。
     registry = ToolRegistry()
     registry.register(
-        ToolSpec(name="list_notes", description="List every Markdown note available in the notes directory.", input_model=EmptyInput),
+        ToolSpec(
+            name="list_notes",
+            description="List every Markdown note available in the notes directory.",
+            input_model=EmptyInput,
+        ),
         list_notes,
     )
     registry.register(
-        ToolSpec(name="search_notes", description="Search for Markdown notes containing a specific query.", input_model=SearchNotesInput),
+        ToolSpec(
+            name="search_notes",
+            description="Search for Markdown notes containing a specific query.",
+            input_model=SearchNotesInput,
+        ),
         search_notes,
     )
     registry.register(
-        ToolSpec(name="read_notes", description="Read a Markdown note by its path relative to the notes directory.", input_model=ReadNotesInput),
+        ToolSpec(
+            name="read_notes",
+            description="Read a Markdown note by its path relative to the notes directory.",
+            input_model=ReadNotesInput,
+        ),
         read_notes,
     )
     registry.register(
-        ToolSpec(name="pwsh", description="Run a PowerShell command in the workspace and return its output.", input_model=PwshInput),
+        ToolSpec(
+            name="pwsh",
+            description="Run a PowerShell command in the workspace and return its output.",
+            input_model=PwshInput,
+        ),
         run_pwsh,
+    )
+    clarification_service = ClarificationService(
+        presenter=clarification_presenter,
+        event_dispatcher=event_dispatcher,
+    )
+    registry.register(
+        ToolSpec(
+            name="request_clarification",
+            description=(
+                "针对一个高影响需求问题向用户提供 2 至 5 个选项、一个有依据的推荐项，"
+                "并允许用户在需要时输入自定义答案。"
+            ),
+            input_model=RequestClarificationInput,
+        ),
+        clarification_service.request,
     )
     return registry
