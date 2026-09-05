@@ -12,9 +12,8 @@
 from collections.abc import Callable
 from typing import Any
 
-from specpilot.config import MAX_TURNS, NOTES_DIR
+from specpilot.config import MAX_TURNS, WORKSPACE_ROOT
 from specpilot.models import ToolCall
-from specpilot.policy import ask_user, check_deny_list, check_rules
 
 Hook = Callable[..., Any]
 
@@ -52,11 +51,11 @@ class HookRegistry:
 
 
 def context_inject_hook(messages: list[dict[str, Any]], query: str) -> None:
-    """在提交用户输入时显示当前笔记目录。
+    """在提交用户输入时显示当前目标仓库。
 
     名称沿用原 Demo；当前只输出提示，并未真正修改模型上下文。
     """
-    print(f"\033[90m[HOOK] UserPromptSubmit: working in {NOTES_DIR}\033[0m")
+    print(f"\033[90m[HOOK] UserPromptSubmit: working in {WORKSPACE_ROOT}\033[0m")
 
 
 def max_turns_counter_hook(messages: list[dict[str, Any]], query: str) -> str | None:
@@ -71,22 +70,6 @@ def max_turns_counter_hook(messages: list[dict[str, Any]], query: str) -> str | 
 def log_hook(block: ToolCall) -> None:
     """在工具执行前输出简洁日志，不记录可能敏感的完整参数。"""
     print(f"[HOOK] {block.name}(...)")
-
-
-def permission_hook(block: ToolCall) -> str | None:
-    """依次执行强制拒绝检查和需审批规则检查。"""
-
-    # 永久拒绝优先于可审批规则，确保高危命令不能通过用户确认绕过。
-    if block.name == "pwsh":
-        reason = check_deny_list(block.input.get("command", ""))
-        if reason:
-            print(f"\n\033[31m[blocked] {reason}\033[0m")
-            return reason
-
-    reason = check_rules(block.name, block.input)
-    if reason and ask_user(block.name, block.input, reason) == "deny":
-        return f"Permission denied: {reason}"
-    return None
 
 
 def large_output_hook(block: ToolCall, output: str) -> None:
@@ -113,7 +96,6 @@ def build_default_hooks() -> HookRegistry:
     hooks = HookRegistry()
     hooks.register("UserPromptSubmit", context_inject_hook)
     hooks.register("UserPromptSubmit", max_turns_counter_hook)
-    hooks.register("PreToolUse", permission_hook)
     hooks.register("PreToolUse", log_hook)
     hooks.register("PostToolUse", large_output_hook)
     hooks.register("Stop", summary_hook)

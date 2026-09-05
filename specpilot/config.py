@@ -14,11 +14,11 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
-
 # 从包文件位置推导项目根目录，因此从任意工作目录启动都能找到同一份配置。
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 ENV_FILE = PROJECT_ROOT / ".env"
-NOTES_DIR = PROJECT_ROOT / "notes"
+# CLI 从目标仓库目录启动；解析一次绝对路径，供所有仓库工具共享同一安全边界。
+WORKSPACE_ROOT = Path.cwd().resolve()
 
 # override=True 保留原 Demo 行为：项目 .env 的值优先于当前进程中的同名变量。
 load_dotenv(dotenv_path=ENV_FILE, override=True)

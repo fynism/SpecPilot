@@ -1,32 +1,32 @@
 """实现工具注册、工具执行管线和当前内置工具。
 
 当前职责：
-    维护模型可用工具的单一注册表；在执行前校验模型参数并触发 Hook；提供原 Demo 的
-    笔记读取和 PowerShell 工具。Agent Loop 只依赖注册表与执行器，不了解工具细节。
+    维护模型可用工具的单一注册表；在执行前校验模型参数并触发 Hook；装配只读仓库调查
+    和需求澄清工具。Agent Loop 只依赖注册表与执行器，不了解工具细节。
 
 后续扩展：
     可把内置工具移动到 ``tools/`` 子包，并加入仓库调查、Spec 操作和 MCP 适配器。
     Registry 也可支持按需加载 Skill 提供的工具，但所有工具仍必须经过同一执行管线。
 """
 
-import os
-import subprocess
 from collections.abc import Callable
+from pathlib import Path
 from typing import Any
 
 from pydantic import ValidationError
 
 from specpilot.clarification import ClarificationPresenter, ClarificationService
-from specpilot.config import NOTES_DIR
 from specpilot.models import (
-    EmptyInput,
-    PwshInput,
-    ReadNotesInput,
     RegisteredTool,
     RequestClarificationInput,
-    SearchNotesInput,
     ToolCall,
     ToolSpec,
+)
+from specpilot.repository import (
+    ListRepositoryFilesInput,
+    ReadRepositoryFileInput,
+    RepositoryReader,
+    SearchRepositoryInput,
 )
 
 
@@ -100,100 +100,39 @@ class ToolExecutor:
         return output
 
 
-def list_notes(_: EmptyInput) -> str:
-    """列出笔记相对路径，不读取正文，适合低成本探索目录。"""
-    if not NOTES_DIR.is_dir():
-        return f"No notes directory exists yet: {NOTES_DIR}"
-    notes = sorted(
-        path.relative_to(NOTES_DIR).as_posix() for path in NOTES_DIR.rglob("*.md") if path.is_file()
-    )
-    return "\n".join(notes) if notes else "(no Markdown notes found)"
-
-
-def search_notes(tool_input: SearchNotesInput) -> str:
-    """在 Markdown 正文中执行不区分大小写的简单字符串搜索。"""
-    if not NOTES_DIR.is_dir():
-        return f"No notes directory exists yet: {NOTES_DIR}"
-    notes = sorted(
-        path.relative_to(NOTES_DIR).as_posix()
-        for path in NOTES_DIR.rglob("*.md")
-        if path.is_file() and tool_input.query.lower() in path.read_text(encoding="utf-8").lower()
-    )
-    return "\n".join(notes) if notes else "(no Markdown notes found)"
-
-
-def read_notes(tool_input: ReadNotesInput) -> str:
-    """读取指定笔记；路径边界由 PreToolUse 权限 Hook 检查。"""
-    note_path = NOTES_DIR / tool_input.path
-    if not note_path.is_file():
-        return f"Note not found: {tool_input.path}"
-    return note_path.read_text(encoding="utf-8")
-
-
-def run_pwsh(tool_input: PwshInput) -> str:
-    """在当前工作目录执行模型生成的 PowerShell 命令。
-
-    这是通用但高风险的兜底工具，因此所有调用都会先经过 Policy Hook；未来应优先
-    增加用途明确、参数受限的专用工具。
-    """
-    try:
-        # 使用参数数组而非拼接启动命令；实际脚本文本作为 pwsh 的单独参数传入。
-        result = subprocess.run(
-            ["pwsh", "-NoProfile", "-Command", tool_input.command],
-            cwd=os.getcwd(),
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-        )
-    except FileNotFoundError:
-        return "Error: pwsh was not found on PATH"
-
-    output = (result.stdout + result.stderr).strip()
-    if not output:
-        output = "(no output)"
-    return f"Exit code: {result.returncode}\n{output}"
-
-
 def build_default_registry(
     clarification_presenter: ClarificationPresenter,
     event_dispatcher: Callable[..., object] | None = None,
+    workspace_root: Path | None = None,
 ) -> ToolRegistry:
-    """集中装配原 Demo 的默认工具集合。"""
+    """集中装配 SpecPilot MVP 默认开放的最小工具集合。"""
 
     # 通过工厂创建实例，测试、Skill 或不同运行模式可拥有彼此隔离的注册表。
     registry = ToolRegistry()
+    repository = RepositoryReader(workspace_root or Path.cwd())
     registry.register(
         ToolSpec(
-            name="list_notes",
-            description="List every Markdown note available in the notes directory.",
-            input_model=EmptyInput,
+            name="list_repository_files",
+            description="列出仓库中的文件，用于低成本了解目录结构；不会读取文件正文。",
+            input_model=ListRepositoryFilesInput,
         ),
-        list_notes,
+        repository.list_files,
     )
     registry.register(
         ToolSpec(
-            name="search_notes",
-            description="Search for Markdown notes containing a specific query.",
-            input_model=SearchNotesInput,
+            name="search_repository",
+            description="在仓库的 UTF-8 文本文件中搜索普通字符串，并返回文件、行号和片段。",
+            input_model=SearchRepositoryInput,
         ),
-        search_notes,
+        repository.search,
     )
     registry.register(
         ToolSpec(
-            name="read_notes",
-            description="Read a Markdown note by its path relative to the notes directory.",
-            input_model=ReadNotesInput,
+            name="read_repository_file",
+            description="读取仓库内一个 UTF-8 文本文件的指定行范围；不能访问仓库外路径。",
+            input_model=ReadRepositoryFileInput,
         ),
-        read_notes,
-    )
-    registry.register(
-        ToolSpec(
-            name="pwsh",
-            description="Run a PowerShell command in the workspace and return its output.",
-            input_model=PwshInput,
-        ),
-        run_pwsh,
+        repository.read_file,
     )
     clarification_service = ClarificationService(
         presenter=clarification_presenter,

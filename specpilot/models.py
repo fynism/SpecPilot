@@ -25,30 +25,6 @@ class ToolInput(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
 
 
-class EmptyInput(ToolInput):
-    """表示无需参数的工具，同时仍生成明确的空对象 JSON Schema。"""
-
-    pass
-
-
-class SearchNotesInput(ToolInput):
-    """搜索笔记工具的参数，要求查询文本不能为空。"""
-
-    query: str = Field(min_length=1, description="Text to search for in Markdown notes.")
-
-
-class ReadNotesInput(ToolInput):
-    """读取笔记工具的参数，路径必须相对于笔记目录。"""
-
-    path: str = Field(min_length=1, description="Note path relative to the notes directory.")
-
-
-class PwshInput(ToolInput):
-    """PowerShell 工具的参数，具体命令还需通过安全策略检查。"""
-
-    command: str = Field(min_length=1, description="PowerShell command to execute.")
-
-
 class ClarificationOption(BaseModel):
     """A single user-selectable answer and its most important consequence."""
 

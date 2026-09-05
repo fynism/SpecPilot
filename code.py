@@ -12,7 +12,6 @@
 
 from specpilot.cli import main
 
-
 if __name__ == "__main__":
     # 只有直接执行本文件时才启动 CLI；被测试或其他模块导入时不会产生交互。
     main()
