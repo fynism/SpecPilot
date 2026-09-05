@@ -20,6 +20,7 @@ from specpilot.spec import (
     create_specification,
 )
 from specpilot.spec_store import InMemorySpecStore, SpecStore
+from specpilot.spec_validation import report_as_json
 
 
 class PatchOperation(BaseModel):
@@ -193,6 +194,16 @@ class SpecToolService:
         """返回当前 Spec 最新版本的完整 JSON 事实源。"""
 
         return self._store.get(self._spec_id).model_dump_json()
+
+    def current_spec(self) -> Specification:
+        """向同一组合根中的验证和导出能力提供最新不可变快照。"""
+
+        return self._store.get(self._spec_id)
+
+    def validate_spec(self, _: EmptyInput) -> str:
+        """确定性检查当前 Spec 是否具备进入人工批准阶段的条件。"""
+
+        return report_as_json(self.current_spec())
 
     @staticmethod
     def _put(items: tuple[object, ...], replacement: object) -> tuple[object, ...]:

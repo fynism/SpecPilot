@@ -29,6 +29,7 @@ from specpilot.repository import (
     RepositoryReader,
     SearchRepositoryInput,
 )
+from specpilot.spec_export import SpecExporter
 from specpilot.spec_tools import ApplySpecPatchInput, SpecToolService
 
 
@@ -112,7 +113,8 @@ def build_default_registry(
 
     # 通过工厂创建实例，测试、Skill 或不同运行模式可拥有彼此隔离的注册表。
     registry = ToolRegistry()
-    repository = RepositoryReader(workspace_root or Path.cwd())
+    resolved_workspace_root = (workspace_root or Path.cwd()).resolve()
+    repository = RepositoryReader(resolved_workspace_root)
     registry.register(
         ToolSpec(
             name="list_repository_files",
@@ -171,5 +173,33 @@ def build_default_registry(
             input_model=ApplySpecPatchInput,
         ),
         spec_service.apply_spec_patch,
+    )
+    registry.register(
+        ToolSpec(
+            name="validate_spec",
+            description=(
+                "确定性检查当前 Specification 的目标、阻塞问题和需求验收覆盖，"
+                "返回是否具备进入人工批准阶段的条件。"
+            ),
+            input_model=EmptyInput,
+        ),
+        spec_service.validate_spec,
+    )
+    exporter = SpecExporter(resolved_workspace_root)
+
+    def export_current_spec(_: EmptyInput) -> str:
+        """导出与当前工具集合共享的最新 Spec 快照。"""
+
+        return exporter.export(spec_service.current_spec())
+
+    registry.register(
+        ToolSpec(
+            name="export_spec",
+            description=(
+                "把当前结构化 Specification 导出到工作区固定目录中的 spec.json 和 SPEC.md。"
+            ),
+            input_model=EmptyInput,
+        ),
+        export_current_spec,
     )
     return registry
