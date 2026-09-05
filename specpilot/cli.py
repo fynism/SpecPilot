@@ -15,14 +15,17 @@ try:
     import readline
 
     # readline 只影响终端编辑体验；Windows 不提供该模块时继续正常运行。
-    readline.parse_and_bind("set bind-tty-special-chars off")
-    readline.parse_and_bind("set input-meta on")
-    readline.parse_and_bind("set output-meta on")
-    readline.parse_and_bind("set convert-meta off")
+    bind = getattr(readline, "parse_and_bind", None)
+    if callable(bind):
+        bind("set bind-tty-special-chars off")
+        bind("set input-meta on")
+        bind("set output-meta on")
+        bind("set convert-meta off")
 except ImportError:
     pass
 
 from specpilot.agent import HOOKS, agent_loop
+from specpilot.config import load_settings
 
 
 def print_final_response(history: list[dict[str, Any]]) -> None:
@@ -30,12 +33,19 @@ def print_final_response(history: list[dict[str, Any]]) -> None:
     response_content = history[-1]["content"]
     if isinstance(response_content, list):
         for block in response_content:
-            if getattr(block, "type", None) == "text":
-                print(block.text)
+            if isinstance(block, dict) and block.get("type") == "text":
+                print(block.get("text", ""))
 
 
 def main() -> None:
     """启动交互会话并在多次用户输入之间保留消息历史。"""
+    try:
+        # CLI 启动时明确校验配置；导入 Agent 模块和离线测试不需要真实密钥。
+        load_settings()
+    except RuntimeError as exc:
+        print(f"配置错误：{exc}")
+        return
+
     print("SpecPilot: 通过结构化澄清帮助你定义软件需求")
     print("SpecPilot: Clarify software requirements before implementation\n")
     print("输入一个问题，按Enter发送。输入q退出。")

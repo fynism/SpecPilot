@@ -10,6 +10,7 @@
 """
 
 import os
+from dataclasses import dataclass
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -20,16 +21,48 @@ ENV_FILE = PROJECT_ROOT / ".env"
 # CLI 从目标仓库目录启动；解析一次绝对路径，供所有仓库工具共享同一安全边界。
 WORKSPACE_ROOT = Path.cwd().resolve()
 
-# override=True 保留原 Demo 行为：项目 .env 的值优先于当前进程中的同名变量。
+# 兼容现有传统 Agent Loop 的模块级装配；缺失项只在真正启动 CLI 时由
+# load_settings 给出明确错误，因此测试导入模块不需要真实密钥。
 load_dotenv(dotenv_path=ENV_FILE, override=True)
-
-API_KEY = os.getenv("ANTHROPIC_API_KEY")
+API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
 BASE_URL = os.getenv("ANTHROPIC_BASE_URL")
-MODEL = os.getenv("MODEL_ID")
-MAX_TURNS = int(os.getenv("MAX_TURNS", 15))
+MODEL = os.getenv("MODEL_ID", "")
+try:
+    MAX_TURNS = int(os.getenv("MAX_TURNS", "15"))
+except ValueError:
+    MAX_TURNS = 15
 
-# 在启动阶段尽早失败，比第一次调用模型时才报告缺少配置更容易定位问题。
-if not API_KEY:
-    raise RuntimeError(f"ANTHROPIC_API_KEY is missing. Set it in {ENV_FILE}")
-if not MODEL:
-    raise RuntimeError(f"MODEL_ID is missing. Set it in {ENV_FILE}")
+
+@dataclass(frozen=True)
+class Settings:
+    """一次 CLI 运行所需的已校验配置。"""
+
+    api_key: str
+    model: str
+    base_url: str | None
+    max_turns: int
+
+
+def load_settings() -> Settings:
+    """在 CLI 装配阶段加载配置，避免导入模块时产生环境依赖。"""
+
+    # override=True 保留原 Demo 行为：项目 .env 优先于进程中的同名变量。
+    load_dotenv(dotenv_path=ENV_FILE, override=True)
+    api_key = os.getenv("ANTHROPIC_API_KEY")
+    model = os.getenv("MODEL_ID")
+    if not api_key:
+        raise RuntimeError(f"缺少 ANTHROPIC_API_KEY，请在 {ENV_FILE} 中配置")
+    if not model:
+        raise RuntimeError(f"缺少 MODEL_ID，请在 {ENV_FILE} 中配置")
+    try:
+        max_turns = int(os.getenv("MAX_TURNS", "15"))
+    except ValueError as exc:
+        raise RuntimeError("MAX_TURNS 必须是整数") from exc
+    if max_turns < 1:
+        raise RuntimeError("MAX_TURNS 必须大于 0")
+    return Settings(
+        api_key=api_key,
+        model=model,
+        base_url=os.getenv("ANTHROPIC_BASE_URL"),
+        max_turns=max_turns,
+    )

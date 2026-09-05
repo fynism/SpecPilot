@@ -11,11 +11,10 @@
 
 from typing import Any
 
-from anthropic import Anthropic
-
 from specpilot.clarification import ConsoleClarificationPresenter
 from specpilot.config import API_KEY, BASE_URL, MODEL
 from specpilot.hooks import build_default_hooks
+from specpilot.model_client import AnthropicModelClient, ToolUseBlock
 from specpilot.tools import ToolExecutor, build_default_registry
 
 # 系统提示只描述 Agent 的角色与工具使用边界；未来可由基础提示和按需 Skill 组合。
@@ -36,13 +35,8 @@ Before claiming the specification is ready, call validate_spec and address every
 Use export_spec only when the user asks to export or the specification is ready for review.
 """
 
-# 依赖在模块装配阶段创建，保持与原 Demo 相同的启动行为。
-client_options = {"api_key": API_KEY}
-if BASE_URL:
-    client_options["base_url"] = BASE_URL
-
-# 这些是 CLI 默认运行时依赖。未来可用 AgentRuntime 对象封装，便于测试和多会话隔离。
-CLIENT = Anthropic(**client_options)
+# TODO 这些是 CLI 默认运行时依赖。未来可用 AgentRuntime 对象封装，便于测试和多会话隔离。
+CLIENT = AnthropicModelClient(api_key=API_KEY, model=MODEL, base_url=BASE_URL)
 HOOKS = build_default_hooks()
 TOOL_REGISTRY = build_default_registry(ConsoleClarificationPresenter(), HOOKS.trigger)
 TOOL_EXECUTOR = ToolExecutor(TOOL_REGISTRY, HOOKS.trigger)
@@ -53,17 +47,18 @@ def agent_loop(messages: list[dict[str, Any]]) -> None:
 
     while True:
         # 每轮都携带完整消息和当前工具声明，让模型基于最新工具结果决定下一步。
-        response = CLIENT.messages.create(
-            model=MODEL,
-            system=SYSTEM,
+        response_content = CLIENT.create_message(
             messages=messages,
             tools=TOOL_REGISTRY.anthropic_tools(),
+            system=SYSTEM,
             max_tokens=8000,
         )
 
-        # 先保存模型原始内容，保证后续工具结果能通过 tool_use_id 正确对应。
-        messages.append({"role": "assistant", "content": response.content})
-        tool_calls = [block for block in response.content if block.type == "tool_use"]
+        # 保存供应商无关的结构，保证测试和后续模型迁移不依赖 SDK 对象。
+        messages.append(
+            {"role": "assistant", "content": [block.model_dump() for block in response_content]}
+        )
+        tool_calls = [block for block in response_content if isinstance(block, ToolUseBlock)]
         if not tool_calls:
             # Stop Hook 可返回一条新的用户消息强制继续，例如执行收尾检查。
             force = HOOKS.trigger("Stop", messages)

@@ -1,0 +1,4 @@
+{
+  "roles": ["admin", "member"],
+  "existing_export_format": "csv"
+}

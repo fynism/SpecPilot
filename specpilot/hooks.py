@@ -50,23 +50,6 @@ class HookRegistry:
         return None
 
 
-def context_inject_hook(messages: list[dict[str, Any]], query: str) -> None:
-    """在提交用户输入时显示当前目标仓库。
-
-    名称沿用原 Demo；当前只输出提示，并未真正修改模型上下文。
-    """
-    print(f"\033[90m[HOOK] UserPromptSubmit: working in {WORKSPACE_ROOT}\033[0m")
-
-
-def max_turns_counter_hook(messages: list[dict[str, Any]], query: str) -> str | None:
-    """达到配置的 user-role 消息数量时，向 CLI 返回停止信号。"""
-    turns = sum(1 for message in messages if message["role"] == "user")
-    if turns >= MAX_TURNS:
-        print(f"\033[31m> 达到最大对话轮数 {turns}/{MAX_TURNS}, 正在停止...\033[0m")
-        return "stop"
-    return None
-
-
 def log_hook(block: ToolCall) -> None:
     """在工具执行前输出简洁日志，不记录可能敏感的完整参数。"""
     print(f"[HOOK] {block.name}(...)")
@@ -80,22 +63,41 @@ def large_output_hook(block: ToolCall, output: str) -> None:
 
 def summary_hook(messages: list[dict[str, Any]]) -> None:
     """Agent 停止前统计历史中的工具结果数量。"""
-    tool_count = sum(
-        1
-        for message in messages
-        for block in (message.get("content") if isinstance(message.get("content"), list) else [])
-        if isinstance(block, dict) and block.get("type") == "tool_result"
-    )
+    tool_count = 0
+    for message in messages:
+        content = message.get("content")
+        if not isinstance(content, list):
+            continue
+        tool_count += sum(
+            1 for block in content if isinstance(block, dict) and block.get("type") == "tool_result"
+        )
     print(f"\033[90m[HOOK] Stop: session used {tool_count} tool calls\033[0m")
 
 
-def build_default_hooks() -> HookRegistry:
+def build_default_hooks(
+    workspace_root: str = str(WORKSPACE_ROOT), max_turns: int = MAX_TURNS
+) -> HookRegistry:
     """装配默认 Hook，并集中体现它们的执行顺序。"""
 
     # 装配与 Hook 定义分离，未来测试或其他前端可创建不同的 Hook 组合。
     hooks = HookRegistry()
-    hooks.register("UserPromptSubmit", context_inject_hook)
-    hooks.register("UserPromptSubmit", max_turns_counter_hook)
+
+    def show_workspace(messages: list[dict[str, Any]], query: str) -> None:
+        """显示本次运行绑定的目标仓库。"""
+
+        print(f"\033[90m[HOOK] UserPromptSubmit: working in {workspace_root}\033[0m")
+
+    def enforce_max_turns(messages: list[dict[str, Any]], query: str) -> str | None:
+        """达到配置的用户轮数时返回停止信号。"""
+
+        turns = sum(1 for message in messages if message["role"] == "user")
+        if turns >= max_turns:
+            print(f"\033[31m> 达到最大对话轮数 {turns}/{max_turns}, 正在停止...\033[0m")
+            return "stop"
+        return None
+
+    hooks.register("UserPromptSubmit", show_workspace)
+    hooks.register("UserPromptSubmit", enforce_max_turns)
     hooks.register("PreToolUse", log_hook)
     hooks.register("PostToolUse", large_output_hook)
     hooks.register("Stop", summary_hook)
