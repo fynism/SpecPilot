@@ -23,7 +23,7 @@ class ClarificationPresenter(Protocol):
 
 
 class ConsoleClarificationPresenter:
-    """在引入完整交互组件前使用的无依赖数字选择界面。"""
+    """供非交互终端使用的无依赖数字选择界面。"""
 
     def ask(self, request: ClarificationRequest) -> ClarificationAnswer:
         """渲染数字选项；用户按回车可主动确认推荐项。"""
@@ -41,15 +41,15 @@ class ConsoleClarificationPresenter:
             print(f"  {index}. {option.label}{suffix}")
             print(f"     {option.description}")
 
-        custom_number = len(request.options) + 1
-        if request.allow_custom_answer:
-            print(f"  {custom_number}. 其他方案……")
         print(f"\n推荐理由：{request.recommendation_reason}")
 
         # 输入无效时保持在当前问题内，避免把错误输入传给模型后污染需求事实。
         while True:
             try:
-                raw_choice = input(f"请选择 [{recommended_number}]，输入 q 取消：").strip()
+                prompt = f"请选择 [{recommended_number}]"
+                if request.allow_custom_answer:
+                    prompt += "，或直接输入回答"
+                raw_choice = input(f"{prompt}；输入 q 取消：").strip()
             except (EOFError, KeyboardInterrupt) as exc:
                 raise ClarificationCancelled from exc
 
@@ -61,6 +61,11 @@ class ConsoleClarificationPresenter:
             elif raw_choice.isdigit():
                 selected_number = int(raw_choice)
             else:
+                if request.allow_custom_answer:
+                    return ClarificationAnswer(
+                        request_id=request.request_id,
+                        free_text=raw_choice,
+                    )
                 print("请输入选项编号、按回车确认推荐项，或输入 q 取消。")
                 continue
 
@@ -69,16 +74,6 @@ class ConsoleClarificationPresenter:
                 return ClarificationAnswer(
                     request_id=request.request_id,
                     selected_option_id=selected.id,
-                )
-
-            if request.allow_custom_answer and selected_number == custom_number:
-                custom_answer = input("请输入你的方案：").strip()
-                if not custom_answer:
-                    print("自定义答案不能为空。")
-                    continue
-                return ClarificationAnswer(
-                    request_id=request.request_id,
-                    custom_answer=custom_answer,
                 )
 
             print("请选择列表中的有效选项。")
@@ -121,8 +116,8 @@ class ClarificationService:
             and answer.selected_option_id not in valid_option_ids
         ):
             raise ValueError("交互界面返回了未向用户展示的选项")
-        if answer.custom_answer is not None and not request.allow_custom_answer:
-            raise ValueError("当前问题不允许自定义答案，但交互界面返回了自定义内容")
+        if answer.free_text is not None and not request.allow_custom_answer:
+            raise ValueError("当前问题不允许自由输入，但交互界面返回了文字内容")
         if answer.request_id != request.request_id:
             raise ValueError("交互界面返回了属于其他澄清请求的答案")
 
@@ -131,5 +126,6 @@ class ClarificationService:
             request_id=request.request_id,
             answer=answer,
         )
+        # 只有通过请求归属、选项范围和自由输入权限复验后，才发布已回答事件。
         self._dispatch("ClarificationAnswered", request, answer)
         return outcome.model_dump_json()

@@ -62,7 +62,7 @@ def build_default_registry(
             name="request_clarification",
             description=(
                 "针对一个高影响需求问题向用户提供 2 至 5 个选项、一个有依据的推荐项，"
-                "并允许用户在需要时输入自定义答案。"
+                "并允许用户直接输入回答，或为选中的方向补充限制条件。"
             ),
             input_model=RequestClarificationInput,
         ),
