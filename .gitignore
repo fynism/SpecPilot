@@ -13,3 +13,7 @@ dist/
 
 # 持久化的 Spec 文件
 .specpilot/
+
+#项目相关文档
+docs/product/
+docs/ideas/
