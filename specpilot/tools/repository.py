@@ -8,7 +8,7 @@ from pathlib import Path
 
 from pydantic import Field, model_validator
 
-from specpilot.models import ToolInput
+from specpilot.tools.models import ToolInput
 
 IGNORED_DIRECTORY_NAMES = frozenset(
     {

@@ -3,7 +3,7 @@
 from collections.abc import Callable
 from typing import Protocol
 
-from specpilot.models import (
+from specpilot.tools.models import (
     ClarificationAnswer,
     ClarificationOutcome,
     ClarificationRequest,

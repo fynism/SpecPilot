@@ -4,14 +4,14 @@ import json
 from datetime import UTC, datetime
 from pathlib import Path
 
-from specpilot.spec import (
+from specpilot.spec.export import SpecExporter, render_spec_markdown
+from specpilot.spec.models import (
     AcceptanceCriterion,
     Goal,
     Requirement,
     Specification,
     create_specification,
 )
-from specpilot.spec_export import SpecExporter, render_spec_markdown
 
 NOW = datetime(2026, 9, 5, 8, 0, tzinfo=UTC)
 

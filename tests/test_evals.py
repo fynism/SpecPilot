@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-from specpilot.evals import AgentTrace, load_eval_cases, score_trace
+from specpilot.evaluation.scoring import AgentTrace, load_eval_cases, score_trace
 
 ROOT = Path(__file__).resolve().parent.parent
 

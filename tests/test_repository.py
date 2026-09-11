@@ -5,15 +5,14 @@ from pathlib import Path
 
 import pytest
 
-from specpilot.clarification import ClarificationRequest
-from specpilot.models import ClarificationAnswer
-from specpilot.repository import (
+from specpilot.tools.models import ClarificationAnswer, ClarificationRequest
+from specpilot.tools.registry import build_default_registry
+from specpilot.tools.repository import (
     ListRepositoryFilesInput,
     ReadRepositoryFileInput,
     RepositoryReader,
     SearchRepositoryInput,
 )
-from specpilot.tools import build_default_registry
 
 
 class NoopPresenter:

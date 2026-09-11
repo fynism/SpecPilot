@@ -6,16 +6,16 @@ from typing import Any
 
 import pytest
 
-from specpilot import agent
-from specpilot.clarification import ClarificationPresenter
 from specpilot.config import load_settings
-from specpilot.evals import AgentTrace, load_eval_cases, score_trace
-from specpilot.hooks import HookRegistry
-from specpilot.model_client import AnthropicModelClient, Message, ModelBlock, ModelClient
-from specpilot.models import ClarificationAnswer, ClarificationRequest, ToolCall
-from specpilot.spec import Specification
-from specpilot.spec_tools import SpecToolService
-from specpilot.tools import ToolExecutor, build_default_registry
+from specpilot.evaluation.scoring import AgentTrace, load_eval_cases, score_trace
+from specpilot.runtime import agent
+from specpilot.runtime.hooks import HookRegistry
+from specpilot.runtime.model_client import AnthropicModelClient, Message, ModelBlock, ModelClient
+from specpilot.spec.models import Specification
+from specpilot.spec.tools import SpecToolService
+from specpilot.tools.clarification import ClarificationPresenter
+from specpilot.tools.models import ClarificationAnswer, ClarificationRequest, ToolCall
+from specpilot.tools.registry import ToolExecutor, build_default_registry
 
 ROOT = Path(__file__).resolve().parent.parent
 RUN_LIVE = os.getenv("SPECPILOT_RUN_LIVE_EVALS") == "1"

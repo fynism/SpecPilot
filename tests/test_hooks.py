@@ -1,6 +1,6 @@
 """默认 Hook 装配行为测试。"""
 
-from specpilot.hooks import build_default_hooks
+from specpilot.runtime.hooks import build_default_hooks
 
 
 def test_default_hooks_do_not_limit_outer_conversation_turns() -> None:

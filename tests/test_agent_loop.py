@@ -3,13 +3,13 @@
 from collections.abc import Iterable
 from typing import Any
 
-from specpilot import agent
-from specpilot.clarification import ClarificationPresenter
-from specpilot.hooks import HookRegistry
-from specpilot.model_client import ModelBlock, TextBlock, ToolUseBlock
-from specpilot.models import ClarificationAnswer, ClarificationRequest
-from specpilot.spec_tools import SpecToolService
-from specpilot.tools import ToolExecutor, build_default_registry
+from specpilot.runtime import agent
+from specpilot.runtime.hooks import HookRegistry
+from specpilot.runtime.model_client import ModelBlock, TextBlock, ToolUseBlock
+from specpilot.spec.tools import SpecToolService
+from specpilot.tools.clarification import ClarificationPresenter
+from specpilot.tools.models import ClarificationAnswer, ClarificationRequest
+from specpilot.tools.registry import ToolExecutor, build_default_registry
 
 
 class QueuePresenter(ClarificationPresenter):

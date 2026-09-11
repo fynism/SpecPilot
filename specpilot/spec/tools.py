@@ -6,8 +6,7 @@ from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from specpilot.models import EmptyInput, ToolInput
-from specpilot.spec import (
+from specpilot.spec.models import (
     AcceptanceCriterion,
     Assumption,
     Decision,
@@ -19,8 +18,9 @@ from specpilot.spec import (
     Specification,
     create_specification,
 )
-from specpilot.spec_store import InMemorySpecStore, SpecStore
-from specpilot.spec_validation import report_as_json
+from specpilot.spec.store import InMemorySpecStore, SpecStore
+from specpilot.spec.validation import report_as_json
+from specpilot.tools.models import EmptyInput, ToolInput
 
 
 class PatchOperation(BaseModel):

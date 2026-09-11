@@ -5,7 +5,7 @@ import os
 from pathlib import Path
 from uuid import uuid4
 
-from specpilot.spec import Specification
+from specpilot.spec.models import Specification
 
 
 def _entity_suffix(lifecycle: str) -> str:

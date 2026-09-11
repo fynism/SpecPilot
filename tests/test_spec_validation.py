@@ -2,7 +2,7 @@
 
 from datetime import UTC, datetime
 
-from specpilot.spec import (
+from specpilot.spec.models import (
     AcceptanceCriterion,
     Goal,
     OpenQuestion,
@@ -10,7 +10,7 @@ from specpilot.spec import (
     Specification,
     create_specification,
 )
-from specpilot.spec_validation import validate_specification
+from specpilot.spec.validation import validate_specification
 
 NOW = datetime(2026, 9, 5, 8, 0, tzinfo=UTC)
 

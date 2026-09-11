@@ -24,8 +24,8 @@ try:
 except ImportError:
     pass
 
-from specpilot.agent import HOOKS, agent_loop
 from specpilot.config import load_settings
+from specpilot.runtime.agent import HOOKS, agent_loop
 
 
 def print_final_response(history: list[dict[str, Any]]) -> None:

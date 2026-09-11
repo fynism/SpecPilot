@@ -11,11 +11,11 @@
 
 from typing import Any, Literal
 
-from specpilot.clarification import ConsoleClarificationPresenter
 from specpilot.config import API_KEY, BASE_URL, MAX_TOOL_USE_TURNS, MODEL
-from specpilot.hooks import build_default_hooks
-from specpilot.model_client import AnthropicModelClient, ToolUseBlock
-from specpilot.tools import ToolExecutor, build_default_registry
+from specpilot.runtime.hooks import build_default_hooks
+from specpilot.runtime.model_client import AnthropicModelClient, ToolUseBlock
+from specpilot.tools.clarification import ConsoleClarificationPresenter
+from specpilot.tools.registry import ToolExecutor, build_default_registry
 
 # 系统提示只描述 Agent 的角色与工具使用边界；未来可由基础提示和按需 Skill 组合。
 SYSTEM = """You are SpecPilot, a requirements-clarification agent for software projects.

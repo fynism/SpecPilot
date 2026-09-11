@@ -6,9 +6,9 @@ from datetime import UTC, datetime
 import pytest
 from pydantic import ValidationError
 
-from specpilot.models import EmptyInput
-from specpilot.spec_store import InMemorySpecStore
-from specpilot.spec_tools import ApplySpecPatchInput, SpecToolService
+from specpilot.spec.store import InMemorySpecStore
+from specpilot.spec.tools import ApplySpecPatchInput, SpecToolService
+from specpilot.tools.models import EmptyInput
 
 NOW = datetime(2026, 9, 5, 8, 0, tzinfo=UTC)
 LATER = datetime(2026, 9, 5, 9, 0, tzinfo=UTC)

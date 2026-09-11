@@ -5,8 +5,8 @@
     和需求澄清工具。Agent Loop 只依赖注册表与执行器，不了解工具细节。
 
 后续扩展：
-    可把内置工具移动到 ``tools/`` 子包，并加入仓库调查、Spec 操作和 MCP 适配器。
-    Registry 也可支持按需加载 Skill 提供的工具，但所有工具仍必须经过同一执行管线。
+    Registry 可支持按需加载 Skill 或 MCP 提供的工具，但所有工具仍必须经过同一执行
+    管线；组合规模增长后可把默认工具装配独立为组合根，而不改变执行接口。
 """
 
 from collections.abc import Callable
@@ -15,22 +15,22 @@ from typing import Any
 
 from pydantic import ValidationError
 
-from specpilot.clarification import ClarificationPresenter, ClarificationService
-from specpilot.models import (
+from specpilot.spec.export import SpecExporter
+from specpilot.spec.tools import ApplySpecPatchInput, SpecToolService
+from specpilot.tools.clarification import ClarificationPresenter, ClarificationService
+from specpilot.tools.models import (
     EmptyInput,
     RegisteredTool,
     RequestClarificationInput,
     ToolCall,
     ToolSpec,
 )
-from specpilot.repository import (
+from specpilot.tools.repository import (
     ListRepositoryFilesInput,
     ReadRepositoryFileInput,
     RepositoryReader,
     SearchRepositoryInput,
 )
-from specpilot.spec_export import SpecExporter
-from specpilot.spec_tools import ApplySpecPatchInput, SpecToolService
 
 
 class ToolRegistry:

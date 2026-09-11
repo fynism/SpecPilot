@@ -6,18 +6,18 @@ from unittest.mock import patch
 import pytest
 from pydantic import ValidationError
 
-from specpilot.clarification import (
+from specpilot.tools.clarification import (
     ClarificationCancelled,
     ClarificationService,
     ConsoleClarificationPresenter,
 )
-from specpilot.models import (
+from specpilot.tools.models import (
     ClarificationAnswer,
     ClarificationOption,
     ClarificationRequest,
     RequestClarificationInput,
 )
-from specpilot.tools import ToolExecutor, build_default_registry
+from specpilot.tools.registry import ToolExecutor, build_default_registry
 
 
 def make_input(**overrides: object) -> RequestClarificationInput:
