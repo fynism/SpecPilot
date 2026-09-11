@@ -13,7 +13,7 @@ from collections.abc import Callable
 from typing import Any
 
 from specpilot.config import WORKSPACE_ROOT
-from specpilot.tools.models import ToolCall
+from specpilot.tooling.contracts import ToolCall
 
 Hook = Callable[..., Any]
 

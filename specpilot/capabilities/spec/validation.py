@@ -5,7 +5,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict
 
-from specpilot.spec.models import Specification
+from specpilot.capabilities.spec.models import Specification
 
 
 class SpecValidationIssue(BaseModel):

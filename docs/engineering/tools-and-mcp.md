@@ -29,6 +29,24 @@
 - 工具异常不能泄漏密钥，也不能返回模糊的“失败了”；应提供分类、可重试性和安全诊断。
 - 工具输出属于不可信数据，进入模型前仍需尺寸、类型和内容边界校验。
 
+## Tool 模块放置与接入
+
+`tooling/` 只包含所有 Tool 共享的执行机制：
+
+- `contracts.py`：输入、声明、调用和注册项；
+- `registry.py`：名称到工具实现的注册；
+- `executor.py`：校验、Policy/Hook、执行和错误转换；
+- `catalog.py`：当前运行模式默认启用的内置工具装配。
+
+具体 Tool 必须跟随所属能力放入 `capabilities/<name>/`。例如仓库读取属于
+`capabilities/repository/`，Spec 操作属于 `capabilities/spec/`。不得因为实现最终会被模型
+调用，就把所有具体 Tool 再集中到 `tooling/`；那会让一次能力修改跨越多个类型目录，降低
+locality。
+
+新增 Tool 的推荐顺序是：先在能力模块中定义严格输入与处理函数，再通过
+`tooling/catalog.py` 注册，最后通过 `ToolExecutor` 的公开接口测试成功、校验失败、Hook 拒绝
+和处理异常。Tool 名称和模型可见 Schema 属于稳定接口，移动 Python 文件不能改变它们。
+
 ## Shell 工具
 
 Shell 是最后手段，不是默认文件 API。
@@ -55,6 +73,24 @@ Shell 是最后手段，不是默认文件 API。
 - 凭据不得交给模型、Prompt 或日志；本地 stdio 服务从受控环境获得凭据。
 - 敏感调用展示服务器、工具、关键参数、数据去向和预期副作用后再请求批准。
 - 客户端必须实现超时、取消、速率限制、结果校验和审计。
+
+### MCP Tool 的未来接入方式
+
+当前 MVP 尚未实现 MCP，不创建 `integrations/mcp/` 占位目录。首次引入时，MCP Client 和协议
+转换实现放入 `integrations/mcp/`，并实现 Tooling 定义的 Tool Provider 接口。接入路径必须为：
+
+```text
+MCP Server → MCP Adapter → 内部 Tool 契约 → Tool Registry
+           → Tool Executor → Policy / Hook → MCP Adapter 执行
+```
+
+MCP Tool 不得拥有另一套绕过宿主控制的执行循环。动态 JSON Schema 必须在 Adapter 中转换为
+宿主可校验的输入契约；服务器名进入工具命名空间，服务器提供的描述和 annotations 只能作为
+不可信元数据。连接生命周期、协议错误、凭据、超时与取消留在 Adapter 内部，Agent Loop 只看
+统一工具结果。
+
+首次实现至少需要：协议转换契约测试、重名工具测试、非法 Schema 测试、超时/取消测试、权限
+拒绝测试、恶意工具描述 Eval，以及 MCP 断开后不破坏其他内置工具的恢复测试。
 
 ## Tool 变更检查表
 

@@ -42,6 +42,38 @@ build context → call model → validate action → evaluate policy
 - Context compaction 前后必须保持 Spec、审批和未完成工具调用的一致性。
 - Prompt 与 Skill 必须版本化；一次运行应记录实际使用的版本和模型参数。
 
+### Context 模块的未来接入方式
+
+当前 MVP 尚未实现 Context Compaction，不创建占位目录。出现真实 Token 预算或长会话需求后，
+应在 `runtime/context/` 增加 Context 模块，由它向 Agent Loop 提供“根据 Session State 生成本轮
+模型上下文”的单一接口。Agent Loop 不得自行散落截断、摘要或 Token 估算逻辑。
+
+Context 模块至少应负责：
+
+- 按来源和优先级构建上下文；
+- 在确定性预算触发时选择 Compaction 策略；
+- 保证 Tool Use 与 Tool Result 成对保留；
+- 保留当前 Spec 版本、Decision、OpenQuestion、审批和暂停状态；
+- 记录压缩前后摘要来源、模型、Token 与不可恢复信息。
+
+简单截断、确定性摘要和模型摘要属于同一接口下的不同 Adapter；增加策略前必须用长会话 Eval
+证明需要，不能让 Compaction 改写结构化 Spec 事实。
+
+### Skill Loader 的未来接入方式
+
+当前 MVP 尚未实现 Skill Loading。引入后放在 `runtime/skills/`，负责发现、校验、版本记录和
+按需加载 Skill Definition；它不是具体用户能力，也不能直接执行任意代码。
+
+加载结果必须按贡献类型进入现有受控路径：
+
+- instructions 交给 Context 模块按优先级注入；
+- tools 转换为 Tool 契约并进入统一 Registry 与 Executor；
+- hooks 只能注册宿主允许的事件和权限；
+- metadata、来源和版本写入 Session/Audit。
+
+Skill Loader 不得扩大用户授权、绕过 Policy，或把远程 Skill 内容提升为系统指令。首次实现时
+必须覆盖恶意 Skill、版本冲突、加载失败、重复加载和卸载恢复 Eval。
+
 ## Hook
 
 - Observer Hook 只能记录；Validator/Interceptor Hook 才能阻止行动。

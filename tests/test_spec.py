@@ -5,7 +5,7 @@ from datetime import UTC, datetime
 import pytest
 from pydantic import ValidationError
 
-from specpilot.spec.models import (
+from specpilot.capabilities.spec.models import (
     AcceptanceCriterion,
     Evidence,
     OpenQuestion,

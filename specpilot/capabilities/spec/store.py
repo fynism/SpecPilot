@@ -4,7 +4,7 @@ from collections.abc import Callable
 from datetime import UTC, datetime
 from typing import Protocol
 
-from specpilot.spec.models import Specification
+from specpilot.capabilities.spec.models import Specification
 
 
 class SpecNotFoundError(LookupError):

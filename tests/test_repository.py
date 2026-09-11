@@ -5,14 +5,14 @@ from pathlib import Path
 
 import pytest
 
-from specpilot.tools.models import ClarificationAnswer, ClarificationRequest
-from specpilot.tools.registry import build_default_registry
-from specpilot.tools.repository import (
+from specpilot.capabilities.clarification.models import ClarificationAnswer, ClarificationRequest
+from specpilot.capabilities.repository.tool import (
     ListRepositoryFilesInput,
     ReadRepositoryFileInput,
     RepositoryReader,
     SearchRepositoryInput,
 )
+from specpilot.tooling.catalog import build_default_registry
 
 
 class NoopPresenter:
@@ -31,7 +31,7 @@ def test_default_registry_only_exposes_read_only_repository_and_clarification_to
 
     registry = build_default_registry(NoopPresenter(), workspace_root=tmp_path)
 
-    names = {tool["name"] for tool in registry.anthropic_tools()}
+    names = {tool.name for tool in registry.tool_specs()}
 
     assert names == {
         "list_repository_files",

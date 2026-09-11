@@ -4,8 +4,12 @@ from datetime import UTC, datetime
 
 import pytest
 
-from specpilot.spec.models import create_specification
-from specpilot.spec.store import InMemorySpecStore, SpecConflictError, SpecNotFoundError
+from specpilot.capabilities.spec.models import create_specification
+from specpilot.capabilities.spec.store import (
+    InMemorySpecStore,
+    SpecConflictError,
+    SpecNotFoundError,
+)
 
 CREATED_AT = datetime(2026, 9, 5, 8, 0, tzinfo=UTC)
 UPDATED_AT = datetime(2026, 9, 5, 9, 0, tzinfo=UTC)

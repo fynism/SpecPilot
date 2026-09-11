@@ -2,20 +2,22 @@
 
 import os
 from pathlib import Path
-from typing import Any
 
 import pytest
 
+from specpilot.capabilities.clarification.models import ClarificationAnswer, ClarificationRequest
+from specpilot.capabilities.clarification.tool import ClarificationPresenter
+from specpilot.capabilities.spec.models import Specification
+from specpilot.capabilities.spec.operations import SpecToolService
 from specpilot.config import load_settings
 from specpilot.evaluation.scoring import AgentTrace, load_eval_cases, score_trace
+from specpilot.integrations.anthropic.model import AnthropicModelClient
 from specpilot.runtime import agent
 from specpilot.runtime.hooks import HookRegistry
-from specpilot.runtime.model_client import AnthropicModelClient, Message, ModelBlock, ModelClient
-from specpilot.spec.models import Specification
-from specpilot.spec.tools import SpecToolService
-from specpilot.tools.clarification import ClarificationPresenter
-from specpilot.tools.models import ClarificationAnswer, ClarificationRequest, ToolCall
-from specpilot.tools.registry import ToolExecutor, build_default_registry
+from specpilot.runtime.model import Message, ModelBlock, ModelClient
+from specpilot.tooling.catalog import build_default_registry
+from specpilot.tooling.contracts import ToolCall, ToolSpec
+from specpilot.tooling.executor import ToolExecutor
 
 ROOT = Path(__file__).resolve().parent.parent
 RUN_LIVE = os.getenv("SPECPILOT_RUN_LIVE_EVALS") == "1"
@@ -48,7 +50,7 @@ class CappedModelClient(ModelClient):
     def create_message(
         self,
         messages: list[Message],
-        tools: list[dict[str, Any]],
+        tools: tuple[ToolSpec, ...],
         system: str,
         max_tokens: int,
     ) -> tuple[ModelBlock, ...]:

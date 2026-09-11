@@ -4,8 +4,8 @@ import json
 from datetime import UTC, datetime
 from pathlib import Path
 
-from specpilot.spec.export import SpecExporter, render_spec_markdown
-from specpilot.spec.models import (
+from specpilot.capabilities.spec.export import SpecExporter, render_spec_markdown
+from specpilot.capabilities.spec.models import (
     AcceptanceCriterion,
     Goal,
     Requirement,

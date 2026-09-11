@@ -11,11 +11,13 @@
 
 from typing import Any, Literal
 
+from specpilot.capabilities.clarification.tool import ConsoleClarificationPresenter
 from specpilot.config import API_KEY, BASE_URL, MAX_TOOL_USE_TURNS, MODEL
+from specpilot.integrations.anthropic.model import AnthropicModelClient
 from specpilot.runtime.hooks import build_default_hooks
-from specpilot.runtime.model_client import AnthropicModelClient, ToolUseBlock
-from specpilot.tools.clarification import ConsoleClarificationPresenter
-from specpilot.tools.registry import ToolExecutor, build_default_registry
+from specpilot.runtime.model import ToolUseBlock
+from specpilot.tooling.catalog import build_default_registry
+from specpilot.tooling.executor import ToolExecutor
 
 # 系统提示只描述 Agent 的角色与工具使用边界；未来可由基础提示和按需 Skill 组合。
 SYSTEM = """You are SpecPilot, a requirements-clarification agent for software projects.
@@ -53,7 +55,7 @@ def agent_loop(messages: list[dict[str, Any]]) -> AgentLoopStopReason:
         # 每轮都携带完整消息和当前工具声明，让模型基于最新工具结果决定下一步。
         response_content = CLIENT.create_message(
             messages=messages,
-            tools=TOOL_REGISTRY.anthropic_tools(),
+            tools=TOOL_REGISTRY.tool_specs(),
             system=SYSTEM,
             max_tokens=8000,
         )

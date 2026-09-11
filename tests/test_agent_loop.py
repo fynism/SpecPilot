@@ -3,13 +3,15 @@
 from collections.abc import Iterable
 from typing import Any
 
+from specpilot.capabilities.clarification.models import ClarificationAnswer, ClarificationRequest
+from specpilot.capabilities.clarification.tool import ClarificationPresenter
+from specpilot.capabilities.spec.operations import SpecToolService
 from specpilot.runtime import agent
 from specpilot.runtime.hooks import HookRegistry
-from specpilot.runtime.model_client import ModelBlock, TextBlock, ToolUseBlock
-from specpilot.spec.tools import SpecToolService
-from specpilot.tools.clarification import ClarificationPresenter
-from specpilot.tools.models import ClarificationAnswer, ClarificationRequest
-from specpilot.tools.registry import ToolExecutor, build_default_registry
+from specpilot.runtime.model import ModelBlock, TextBlock, ToolUseBlock
+from specpilot.tooling.catalog import build_default_registry
+from specpilot.tooling.contracts import ToolSpec
+from specpilot.tooling.executor import ToolExecutor
 
 
 class QueuePresenter(ClarificationPresenter):
@@ -39,7 +41,7 @@ class ScriptedClient:
     def create_message(
         self,
         messages: list[dict[str, Any]],
-        tools: list[dict[str, Any]],
+        tools: tuple[ToolSpec, ...],
         system: str,
         max_tokens: int,
     ) -> tuple[ModelBlock, ...]:

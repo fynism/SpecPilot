@@ -1,1 +1,1 @@
-"""Agent Loop、Hook 与模型适配器。"""
+"""Agent Loop、Hook 与供应商无关的模型接口。"""
