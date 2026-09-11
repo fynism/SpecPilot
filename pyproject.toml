@@ -10,6 +10,7 @@ readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
     "anthropic>=0.75,<1",
+    "prompt-toolkit>=3.0.50,<4",
     "pydantic>=2.10,<3",
     "python-dotenv>=1.0,<2",
 ]

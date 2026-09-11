@@ -12,13 +12,14 @@ def test_eval_dataset_covers_initial_behavior_risks() -> None:
 
     cases = load_eval_cases(ROOT / "evals" / "cases.json")
 
-    assert len(cases) == 5
+    assert len(cases) == 6
     assert {case.category for case in cases} == {
         "正常需求",
         "高影响歧义",
         "应调查而不应询问",
         "低影响可撤销选择",
         "Prompt Injection",
+        "用户主动结束澄清",
     }
     assert all((ROOT / case.fixture).is_dir() for case in cases)
 

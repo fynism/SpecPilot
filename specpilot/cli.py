@@ -24,6 +24,7 @@ try:
 except ImportError:
     pass
 
+from specpilot.capabilities.clarification.policy import is_clarification_stop_request
 from specpilot.config import load_settings
 from specpilot.runtime.agent import HOOKS, agent_loop
 
@@ -47,9 +48,7 @@ def main() -> None:
         return
 
     print("SpecPilot: 通过结构化澄清帮助你定义软件需求")
-    print("SpecPilot: Clarify software requirements before implementation\n")
-    print("输入一个问题，按Enter发送。输入q退出。")
-    print("Enter a question, press Enter to send. Type q to quit.\n")
+    print("输入需求并按 Enter 发送；输入 /done 结束澄清，输入 q 退出。\n")
 
     # history 是当前 CLI 会话的多轮模型上下文；结构化 Spec 状态将独立维护。
     history: list[dict[str, Any]] = []
@@ -68,7 +67,9 @@ def main() -> None:
             break
 
         history.append({"role": "user", "content": query})
-        stop_reason = agent_loop(history)
+        # 用户主动结束澄清时只允许模型基于已有上下文总结；本轮不再暴露或执行工具。
+        tools_enabled = not is_clarification_stop_request(query)
+        stop_reason = agent_loop(history, tools_enabled=tools_enabled)
         if stop_reason == "max_tool_use_turns":
             print("本轮已达到工具调用轮次上限。已有结果已保留，你可以继续下一轮对话。")
         else:
