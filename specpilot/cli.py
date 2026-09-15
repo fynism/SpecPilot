@@ -29,6 +29,7 @@ from specpilot.capabilities.clarification.policy import is_clarification_stop_re
 from specpilot.config import WORKSPACE_ROOT, Settings, load_settings
 from specpilot.integrations.anthropic.model import AnthropicModelClient
 from specpilot.integrations.filesystem.session_store import LocalSessionStore
+from specpilot.integrations.terminal.session_picker import SessionPicker, build_session_picker
 from specpilot.runtime.agent import AgentRuntime, build_agent_runtime
 from specpilot.runtime.model import ModelClient
 from specpilot.runtime.session.manager import SessionManager
@@ -64,6 +65,8 @@ def handle_session_command(
     query: str,
     manager: SessionManager,
     emit: Callable[[str], None] = print,
+    *,
+    session_picker: SessionPicker | None = None,
 ) -> SessionCommandResult:
     """处理只允许在 Agent Loop 轮次之间执行的 Session 命令。"""
 
@@ -89,8 +92,14 @@ def handle_session_command(
         return "handled"
     if command == "/switch":
         if not argument:
-            emit("用法：/switch <session-id>")
-            return "handled"
+            picker = session_picker or build_session_picker()
+            selected_session_id = picker.pick(
+                manager.list_sessions(),
+                manager.current.session_id,
+            )
+            if selected_session_id is None:
+                return "handled"
+            argument = selected_session_id
         try:
             session = manager.switch(argument)
         except (SessionNotFoundError, SessionStorageError) as exc:
@@ -152,6 +161,7 @@ def main() -> None:
         print(f"Session 恢复失败：{exc}")
         return
     runtime = build_session_runtime(manager, settings)
+    session_picker = build_session_picker()
 
     print("SpecPilot: 通过结构化澄清帮助你定义软件需求")
     print("输入需求并按 Enter 发送；输入 /sessions 查看对话，输入 /done 结束澄清。")
@@ -169,7 +179,11 @@ def main() -> None:
         if query.strip().lower() in ("q", "exit", ""):
             break
 
-        command_result = handle_session_command(query, manager)
+        command_result = handle_session_command(
+            query,
+            manager,
+            session_picker=session_picker,
+        )
         if command_result == "quit":
             break
         if command_result == "session_changed":

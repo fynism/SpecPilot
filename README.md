@@ -93,7 +93,7 @@ Session 命令只在 Agent Loop 轮次之间执行：
 ```text
 /new [标题]          创建并切换到新 Session
 /sessions            列出当前 worktree 中的 Session
-/switch <session-id>  切换到指定 Session
+/switch [session-id]  无参数时选择 Session；传完整 ID 时直接切换
 /rename <标题>        重命名当前 Session
 /status               显示当前 Session 和 Spec 状态
 ```
@@ -102,6 +102,9 @@ Session 命令只在 Agent Loop 轮次之间执行：
 `.specpilot/sessions/`。CLI 重启后自动恢复上次活动 Session；如果上次退出发生在 Agent Loop
 中间，只会标记并提示该轮已中断，不会自动重放模型或工具调用。MVP 不支持并发写入同一个
 Session，也不在不同 worktree 之间自动共享 Session。
+
+交互终端中的无参数 `/switch` 支持方向键选择，并以每页 10 条分页；PgUp/PgDn 或 p/n 用于
+翻页。管道、CI 等非交互环境会回退为一次性编号列表，仍可使用序号完成切换。
 
 当用户要求导出，或 Agent 判断 Spec 已具备评审条件时，文件会写入：
 
