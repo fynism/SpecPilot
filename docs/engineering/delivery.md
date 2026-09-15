@@ -10,15 +10,15 @@
 提交信息采用 Conventional Commits：
 
 ```text
-<type>(optional-scope): <中文摘要>
+<type>: <中文摘要>
 ```
 
-`type` 和可选 `scope` 保留 Conventional Commits 的英文机器可读格式；摘要与正文统一使用
-中文，确保项目提交历史对当前协作者清晰一致。例如：
+`type` 保留 Conventional Commits 的英文机器可读格式；本项目不使用 `scope`，以保持提交
+信息格式一致。摘要与正文统一使用中文，确保项目提交历史对当前协作者清晰一致。例如：
 
 ```text
 docs: 添加工程手册与 Agent 开发指引
-feat(spec): 增加结构化需求状态
+feat: 增加结构化需求状态
 ```
 
 常用类型：
