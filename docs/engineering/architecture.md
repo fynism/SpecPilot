@@ -43,13 +43,14 @@ Adapters: Anthropic、Filesystem、MCP、SQLite、Web
 ```text
 specpilot/
 ├── cli.py、config.py          # 入口与配置
-├── runtime/                   # Agent Loop、Hook、供应商无关模型接口
+├── runtime/                   # Agent Loop、Session、Hook、供应商无关模型接口
+│   └── session/               # 本地对话生命周期与持久化端口
 ├── tooling/                   # Tool 契约、Registry、Executor、默认工具目录
 ├── capabilities/              # 用户可感知的内置能力
 │   ├── repository/            # 只读仓库调查
 │   ├── clarification/         # Clarification HITL
 │   └── spec/                  # Specification 生命周期
-├── integrations/              # Anthropic 等外部 SDK 或协议适配器
+├── integrations/              # Anthropic、文件系统等外部 SDK 或 I/O 适配器
 └── evaluation/                # Eval 数据模型与评分
 ```
 
@@ -91,9 +92,9 @@ Evaluation    → 公开接口和受控测试数据
   组合根装配。
 - `runtime/` 不得依赖某个能力的内部实现来决定业务规则。
 - `integrations/` 可以依赖第三方库，领域模型和 Tool 契约不得反向依赖具体 SDK。
-- `tooling/catalog.py` 当前集中装配内置工具。MVP 的模块级依赖仍在 `runtime/agent.py`
-  创建；当出现第二个前端、模型适配器或运行模式时，应提取 `bootstrap.py` 作为唯一组合根，
-  而不是现在创建无实现的占位文件。
+- `tooling/catalog.py` 当前集中装配内置工具。CLI 在 Session 切换时通过
+  `runtime/agent.py` 的工厂创建独立运行时；当出现第二个前端或运行模式时，应提取
+  `bootstrap.py` 作为唯一组合根，而不是现在创建无实现的占位文件。
 
 ### 新模块接入实践
 

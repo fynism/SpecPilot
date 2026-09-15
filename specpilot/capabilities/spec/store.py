@@ -37,6 +37,26 @@ class InMemorySpecStore:
         self._clock = clock or (lambda: datetime.now(UTC))
         self._history: dict[str, list[Specification]] = {}
 
+    @classmethod
+    def from_history(
+        cls,
+        history: tuple[Specification, ...],
+        clock: Callable[[], datetime] | None = None,
+    ) -> "InMemorySpecStore":
+        """从经过 Session Schema 校验的连续版本历史恢复 Store。"""
+
+        if not history:
+            raise ValueError("Spec 历史不能为空")
+        spec_id = history[0].spec_id
+        if any(spec.spec_id != spec_id for spec in history):
+            raise ValueError("Spec 历史只能包含同一个 spec_id")
+        if tuple(spec.version for spec in history) != tuple(range(1, len(history) + 1)):
+            raise ValueError("Spec 历史版本必须从 1 开始连续递增")
+
+        store = cls(clock=clock)
+        store._history[spec_id] = [spec.model_copy(deep=True) for spec in history]
+        return store
+
     def create(self, spec: Specification) -> Specification:
         """保存第一个版本，并返回与内部状态隔离的副本。"""
 
@@ -90,3 +110,10 @@ class InMemorySpecStore:
         if spec_id not in self._history:
             raise SpecNotFoundError(f"Spec 不存在：{spec_id}")
         return tuple(spec.version for spec in self._history[spec_id])
+
+    def history(self, spec_id: str) -> tuple[Specification, ...]:
+        """返回可持久化的完整版本历史，不暴露内部可变容器。"""
+
+        if spec_id not in self._history:
+            raise SpecNotFoundError(f"Spec 不存在：{spec_id}")
+        return tuple(spec.model_copy(deep=True) for spec in self._history[spec_id])
