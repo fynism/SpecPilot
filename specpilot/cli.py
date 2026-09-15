@@ -12,24 +12,13 @@
 from collections.abc import Callable
 from typing import Any, Literal
 
-try:
-    import readline
-
-    # readline 只影响终端编辑体验；Windows 不提供该模块时继续正常运行。
-    bind = getattr(readline, "parse_and_bind", None)
-    if callable(bind):
-        bind("set bind-tty-special-chars off")
-        bind("set input-meta on")
-        bind("set output-meta on")
-        bind("set convert-meta off")
-except ImportError:
-    pass
-
 from specpilot.capabilities.clarification.policy import is_clarification_stop_request
 from specpilot.config import WORKSPACE_ROOT, Settings, load_settings
 from specpilot.integrations.anthropic.model import AnthropicModelClient
 from specpilot.integrations.filesystem.session_store import LocalSessionStore
+from specpilot.integrations.terminal.command_prompt import build_command_prompt
 from specpilot.integrations.terminal.session_picker import SessionPicker, build_session_picker
+from specpilot.integrations.terminal.session_presenter import build_session_presenter
 from specpilot.runtime.agent import AgentRuntime, build_agent_runtime
 from specpilot.runtime.model import ModelClient
 from specpilot.runtime.session.manager import SessionManager
@@ -161,18 +150,14 @@ def main() -> None:
         print(f"Session 恢复失败：{exc}")
         return
     runtime = build_session_runtime(manager, settings)
+    command_prompt = build_command_prompt()
     session_picker = build_session_picker()
-
-    print("SpecPilot: 通过结构化澄清帮助你定义软件需求")
-    print("输入需求并按 Enter 发送；输入 /sessions 查看对话，输入 /done 结束澄清。")
-    print(f"已恢复 Session：{session.session_id} · {session.title}")
-    if session.status == "interrupted":
-        print("上一轮未完整结束，系统不会自动重放模型或工具调用。")
-    print()
+    session_presenter = build_session_presenter()
+    session_presenter.present(session, manager.current_spec())
 
     while True:
         try:
-            query = input("\033[36mSpecPilot >> \033[0m")
+            query = command_prompt.read()
         except (EOFError, KeyboardInterrupt):
             break
 
@@ -188,7 +173,7 @@ def main() -> None:
             break
         if command_result == "session_changed":
             runtime = build_session_runtime(manager, settings)
-            print()
+            session_presenter.present(manager.current, manager.current_spec())
             continue
         if command_result == "handled":
             print()

@@ -1,7 +1,6 @@
 """提供支持分页与非交互回退的 Session 终端选择器。"""
 
 import sys
-import unicodedata
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from typing import Protocol, TextIO
@@ -16,6 +15,7 @@ from prompt_toolkit.layout.dimension import Dimension
 from prompt_toolkit.output import Output
 from prompt_toolkit.styles import Style
 
+from specpilot.integrations.terminal.text import safe_terminal_text
 from specpilot.runtime.session.models import SessionRecord
 
 DEFAULT_PAGE_SIZE = 10
@@ -56,7 +56,7 @@ def build_session_choices(sessions: Sequence[SessionRecord]) -> tuple[SessionCho
         SessionChoice(
             session_id=session.session_id,
             line=(
-                f"{_short_session_id(session.session_id)} · {_safe_terminal_text(session.title)} · "
+                f"{_short_session_id(session.session_id)} · {safe_terminal_text(session.title)} · "
                 f"{session.status} · {session.updated_at.isoformat(timespec='seconds')} · "
                 f"{len(session.messages)} 条消息"
             ),
@@ -293,12 +293,3 @@ def _short_session_id(session_id: str) -> str:
     if not separator:
         return session_id[-8:]
     return f"{prefix}-{suffix[-8:]}"
-
-
-def _safe_terminal_text(value: str) -> str:
-    """移除标题中的控制字符，防止持久化文本改变终端布局或样式。"""
-
-    cleaned = "".join(
-        " " if unicodedata.category(character).startswith("C") else character for character in value
-    )
-    return " ".join(cleaned.split())
