@@ -36,6 +36,16 @@ Checkpoint 必须足以恢复而不重复危险副作用，包括：
 保存采用事务或“临时文件 + 原子替换”。恢复时校验 Schema 版本、校验和以及待执行动作是否仍
 有效；不兼容时停止并要求迁移，不能猜测修复。
 
+## 当前本地 Session MVP
+
+当前实现以 worktree 为作用域，在 `.specpilot/sessions/` 中保存多个本地 Session。一个 Session
+快照原子包含消息、当前请求、生命周期状态和完整 Spec 版本历史；索引只记录已知 Session 与
+上次活动项。不同 worktree 不自动共享状态。
+
+恢复边界是完整 Agent Loop 轮次：进入 Loop 前持久化 `running`，Loop 正常返回后持久化
+`waiting_for_user`。启动时遗留的 `running` 转为 `interrupted`，但不会自动执行任何待处理动作。
+这是可恢复对话的最小实现，不满足工具执行中 checkpoint、并发写入、事件审计或长期记忆需求。
+
 ## 并发与一致性
 
 - 状态更新使用单写者或乐观锁版本号，禁止后写覆盖先写。

@@ -32,6 +32,15 @@ build context → call model → validate action → evaluate policy
 - 取消必须传播到正在运行的工具；无法取消时记录 `cancellation_pending`。
 - 恢复后不得重复已经成功且不可安全重复的副作用。
 
+### 当前 Session 恢复边界
+
+当前 CLI 已支持在一个 worktree 中保存和切换多个 Session。每个 Session 独占消息历史与
+结构化 Spec，普通输入仍运行传统 Agent Loop。切换只发生在 CLI 等待用户输入时；本地快照在
+进入 Loop 前记录 `running` 和当前请求，在完整 Loop 返回后记录 `waiting_for_user`。
+
+启动时发现遗留 `running` 状态，必须转换为 `interrupted` 并提示用户，不自动重放模型或工具
+调用。该实现只提供轮次间恢复，不等同于工具级 checkpoint；并发写入与执行中恢复仍不支持。
+
 ### 用户主动结束澄清
 
 用户通过 `/done` 或明确自然语言表示“到此为止”时，下一次模型响应是最终总结轮，而不是新的

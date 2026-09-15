@@ -70,3 +70,17 @@ def test_missing_spec_is_explicit() -> None:
 
     with pytest.raises(SpecNotFoundError, match="不存在"):
         InMemorySpecStore().get("SP-000000000000")
+
+
+def test_store_restores_and_exports_complete_history() -> None:
+    """Session 可以恢复完整 Spec 版本历史，而不是只保留最新快照。"""
+
+    store = InMemorySpecStore(clock=lambda: UPDATED_AT)
+    original = store.create(create_specification("数据导出", now=CREATED_AT))
+    store.save(original.model_copy(update={"status": "clarifying"}), expected_version=1)
+
+    restored = InMemorySpecStore.from_history(store.history(original.spec_id))
+
+    assert restored.get(original.spec_id, version=1).status == "draft"
+    assert restored.get(original.spec_id).status == "clarifying"
+    assert restored.versions(original.spec_id) == (1, 2)

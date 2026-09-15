@@ -9,7 +9,7 @@ Specification（以下简称 Spec）。
 
 ## 当前能力
 
-- 连续多轮 CLI 对话，在一次启动中保留消息历史；
+- 在当前 worktree 中创建、切换和恢复多个本地持久化对话；
 - 在工作区边界内列出、搜索和按行读取 UTF-8 仓库文件；
 - 用方向键选择澄清选项，默认高亮推荐项，同时支持直接输入或为选项补充文字；
 - 管理包含目标、范围、需求、决策、假设、未决问题、验收条件和证据的结构化 Spec；
@@ -86,7 +86,29 @@ SpecPilot >> 我想为这个项目增加导出功能，请先调查现有代码�
 
 输入 `/done`、`到此为止`、`先到这里`、`停止澄清` 等明确结束语后，Agent 的下一次响应只会
 总结当前已知信息和未决项，不会调用任何工具。该响应结束后仍可继续输入新需求。主提示符下
-输入 `q`、`exit` 或空输入可以退出整个 CLI。
+输入 `q`、`exit`、`/quit` 或空输入可以退出整个 CLI。
+
+Session 命令只在 Agent Loop 轮次之间执行：
+
+```text
+/new [标题]          创建并切换到新 Session
+/sessions            列出当前 worktree 中的 Session
+/switch [session-id]  无参数时选择 Session；传完整 ID 时直接切换
+/rename <标题>        重命名当前 Session
+/status               显示当前 Session 和 Spec 状态
+```
+
+每个 Session 独占消息历史和一份结构化 Spec，状态保存在当前 worktree 的
+`.specpilot/sessions/`。CLI 重启后自动恢复上次活动 Session；如果上次退出发生在 Agent Loop
+中间，只会标记并提示该轮已中断，不会自动重放模型或工具调用。MVP 不支持并发写入同一个
+Session，也不在不同 worktree 之间自动共享 Session。
+
+交互终端中的无参数 `/switch` 支持方向键选择，并以每页 10 条分页；PgUp/PgDn 或 p/n 用于
+翻页。管道、CI 等非交互环境会回退为一次性编号列表，仍可使用序号完成切换。
+
+启动恢复、创建或切换 Session 后，交互终端会清空当前可视区域，并展示该 Session 的身份、
+Spec 状态及最近 10 条可读对话；工具协议内容不会展开。主输入框输入 `/` 可以查看命令格式和
+用途，输入命令前缀后按 Tab 可以自动补全。非交互环境继续使用普通逐行输入且不会清屏。
 
 当用户要求导出，或 Agent 判断 Spec 已具备评审条件时，文件会写入：
 
@@ -95,7 +117,7 @@ SpecPilot >> 我想为这个项目增加导出功能，请先调查现有代码�
 .specpilot/specs/<spec_id>/SPEC.md
 ```
 
-当前消息历史和结构化 Spec 只保存在进程内；退出前应导出需要保留的内容。
+结构化 Spec 会随 Session 自动持久化；显式导出仍用于生成便于评审的 JSON 和 Markdown 视图。
 
 ## 工程检查
 
@@ -113,13 +135,13 @@ uv run pytest
 ```text
 specpilot/
 ├── cli.py             # 命令行入口
-├── runtime/           # Agent Loop、Hook 和模型接口
+├── runtime/           # Agent Loop、Session、Hook 和模型接口
 ├── tooling/           # 通用工具契约、注册与执行机制
 ├── capabilities/      # 仓库调查、需求澄清和 Spec 能力
-├── integrations/      # Anthropic 等外部系统适配器
+├── integrations/      # Anthropic、本地文件系统等外部适配器
 └── evaluation/        # Eval 数据模型与评分
 ```
 
 工程约定与扩展方式请参阅 [工程手册](docs/engineering/README.md)，产品范围请参阅
-[CLI MVP 产品需求文档](docs/product/mvp-prd.md)。Skill Loader、上下文压缩、MCP Tool Calling、
-持久化 Session 和 Permission HITL 尚未实现。
+[CLI MVP 产品需求文档](docs/product/mvp-prd.md)。Skill Loader、上下文压缩、MCP Tool Calling
+和 Permission HITL 尚未实现。
