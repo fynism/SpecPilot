@@ -41,6 +41,22 @@ build context → call model → validate action → evaluate policy
 启动时发现遗留 `running` 状态，必须转换为 `interrupted` 并提示用户，不自动重放模型或工具
 调用。该实现只提供轮次间恢复，不等同于工具级 checkpoint；并发写入与执行中恢复仍不支持。
 
+### 当前全屏 TUI 边界
+
+TTY 环境由一个 `prompt_toolkit.Application(full_screen=True)` 独占 alternate screen，统一管理
+对话区、输入区、命令补全、Session 选择与 Clarification 浮层；不得在它内部再次调用独立的
+`Application.run()`。非 TTY 环境继续使用逐行控制台，保证管道和 CI 不接收控制序列。
+
+传统 Agent Loop 在单个后台 Worker 中同步运行，TUI 事件循环只负责输入和渲染。Runtime 与
+Hook 不得直接 `print()` 到 alternate screen，而应通过注入的事件 sink 请求 UI 更新。Session
+切换仍只允许在 Worker 空闲时发生；完整轮次返回前不得把中间消息伪装成稳定恢复点。
+
+ClarificationPresenter 保持同步端口：Worker 发出请求后等待，TUI 在同一 Application 中展示
+浮层并返回经过请求 ID 绑定的答案。TUI 退出必须唤醒尚在等待的 Presenter，避免后台线程永久
+阻塞。当前模型与工具适配器没有协作式取消接口，因此运行中的 Ctrl+C 不会强制杀死 Worker；
+界面会明确拒绝该操作，而不是伪造已经取消。后续增加取消时必须先把取消令牌贯穿模型、工具和
+Session 状态机。
+
 ### 用户主动结束澄清
 
 用户通过 `/done` 或明确自然语言表示“到此为止”时，下一次模型响应是最终总结轮，而不是新的

@@ -9,16 +9,19 @@
     Agent Runtime 未来也能被 Web 或服务端接口复用。
 """
 
+import sys
 from collections.abc import Callable
 from typing import Any, Literal
 
 from specpilot.capabilities.clarification.policy import is_clarification_stop_request
+from specpilot.capabilities.clarification.tool import ClarificationPresenter
 from specpilot.config import WORKSPACE_ROOT, Settings, load_settings
 from specpilot.integrations.anthropic.model import AnthropicModelClient
 from specpilot.integrations.filesystem.session_store import LocalSessionStore
 from specpilot.integrations.terminal.command_prompt import build_command_prompt
 from specpilot.integrations.terminal.session_picker import SessionPicker, build_session_picker
 from specpilot.integrations.terminal.session_presenter import build_session_presenter
+from specpilot.integrations.terminal.tui import FullScreenTui
 from specpilot.runtime.agent import AgentRuntime, build_agent_runtime
 from specpilot.runtime.model import ModelClient
 from specpilot.runtime.session.manager import SessionManager
@@ -117,6 +120,9 @@ def build_session_runtime(
     manager: SessionManager,
     settings: Settings,
     client: ModelClient | None = None,
+    *,
+    clarification_presenter: ClarificationPresenter | None = None,
+    event_sink: Callable[[str], None] = print,
 ) -> AgentRuntime:
     """为当前 Session 装配独占 Spec 与澄清状态的 Agent Runtime。"""
 
@@ -130,25 +136,18 @@ def build_session_runtime(
         workspace_root=WORKSPACE_ROOT,
         spec_tools=manager.spec_tools,
         max_tool_use_turns=settings.max_tool_use_turns,
+        clarification_presenter=clarification_presenter,
+        event_sink=event_sink,
     )
 
 
-def main() -> None:
-    """启动可以创建、切换并恢复多个本地 Session 的交互式 CLI。"""
-    try:
-        # CLI 启动时明确校验配置；导入 Agent 模块和离线测试不需要真实密钥。
-        settings = load_settings()
-    except RuntimeError as exc:
-        print(f"配置错误：{exc}")
-        return
+def run_console(
+    manager: SessionManager,
+    settings: Settings,
+) -> None:
+    """在非 TTY 环境保留可管道化的逐行控制台模式。"""
 
-    manager = SessionManager(LocalSessionStore(WORKSPACE_ROOT))
-    try:
-        session = manager.start()
-    except SessionStorageError as exc:
-        # 损坏状态不能被静默替换为空对话，否则用户可能在不知情时覆盖原始数据。
-        print(f"Session 恢复失败：{exc}")
-        return
+    session = manager.current
     runtime = build_session_runtime(manager, settings)
     command_prompt = build_command_prompt()
     session_picker = build_session_picker()
@@ -207,6 +206,59 @@ def main() -> None:
         else:
             print_final_response(manager.messages)
         print()
+
+
+def main() -> None:
+    """TTY 启动全屏 TUI，重定向环境使用兼容的逐行控制台。"""
+
+    try:
+        # CLI 启动时明确校验配置；导入 Agent 模块和离线测试不需要真实密钥。
+        settings = load_settings()
+    except RuntimeError as exc:
+        print(f"配置错误：{exc}")
+        return
+
+    manager = SessionManager(LocalSessionStore(WORKSPACE_ROOT))
+    try:
+        manager.start()
+    except SessionStorageError as exc:
+        # 损坏状态不能被静默替换为空对话，否则用户可能在不知情时覆盖原始数据。
+        print(f"Session 恢复失败：{exc}")
+        return
+
+    if sys.stdin.isatty() and sys.stdout.isatty():
+
+        def runtime_factory(
+            presenter: ClarificationPresenter,
+            event_sink: Callable[[str], None],
+        ) -> AgentRuntime:
+            """为 TUI 当前 Session 创建绑定同一事件循环的 Agent Runtime。"""
+
+            return build_session_runtime(
+                manager,
+                settings,
+                clarification_presenter=presenter,
+                event_sink=event_sink,
+            )
+
+        def command_handler(
+            query: str,
+            emit: Callable[[str], None],
+        ) -> SessionCommandResult:
+            """让 TUI 复用既有确定性 Session 命令路由。"""
+
+            return handle_session_command(query, manager, emit)
+
+        tui = FullScreenTui(
+            manager,
+            runtime_factory,
+            command_handler,
+            lambda query: not is_clarification_stop_request(query),
+        )
+        tui.run()
+        return
+
+    run_console(manager, settings)
 
 
 if __name__ == "__main__":
