@@ -122,6 +122,67 @@ def test_tui_session_picker_switches_without_nested_application(tmp_path: Path) 
     assert manager.current.session_id == first_id
 
 
+def test_tui_pages_back_through_history_and_stops_following_tail(tmp_path: Path) -> None:
+    """PageUp 移动真实 Transcript 阅读位置，而不是只保留在最新消息。"""
+
+    manager = make_manager(tmp_path)
+    for index in range(12):
+        manager.begin_turn(f"第 {index} 个问题")
+        manager.messages.append(
+            {
+                "role": "assistant",
+                "content": [{"type": "text", "text": f"第 {index} 个回答"}],
+            }
+        )
+        manager.complete_turn()
+
+    with create_pipe_input() as pipe_input:
+        pipe_input.send_text("\x1b[5~/quit\r")
+        tui = make_tui(manager, pipe_input)
+        initial_position = tui.transcript_cursor_position
+
+        tui.run()
+
+    assert initial_position == tui.transcript_length
+    assert tui.transcript_cursor_position < tui.transcript_length
+    assert tui.transcript_follows_tail is False
+
+
+def test_tui_transcript_styles_user_and_agent_messages_by_role(tmp_path: Path) -> None:
+    """Transcript 直接依据消息 role 区分用户与 Agent，不解析显示标签。"""
+
+    manager = make_manager(tmp_path)
+    manager.begin_turn("用户消息")
+    manager.messages.append(
+        {
+            "role": "assistant",
+            "content": [{"type": "text", "text": "Agent 消息"}],
+        }
+    )
+    manager.complete_turn()
+    with create_pipe_input() as pipe_input:
+        tui = make_tui(manager, pipe_input)
+        pipe_input.send_text("/quit\r")
+        tui.run()
+
+    assert "class:transcript.user" in tui.transcript_line_styles
+    assert "class:transcript.assistant" in tui.transcript_line_styles
+
+
+def test_tui_switches_only_its_interface_language(tmp_path: Path) -> None:
+    """语言命令刷新 TUI 文案，但不修改持久化 Session 内容。"""
+
+    manager = make_manager(tmp_path)
+    original = manager.current.model_dump(mode="json")
+    with create_pipe_input() as pipe_input:
+        pipe_input.send_text("/language en-US\r/quit\r")
+        tui = make_tui(manager, pipe_input)
+        tui.run()
+
+    assert tui.locale == "en-US"
+    assert manager.current.model_dump(mode="json") == original
+
+
 def test_tui_runs_agent_loop_in_worker_and_persists_completed_turn(tmp_path: Path) -> None:
     """模型轮次不会退出全屏 Application，完成后重新接受命令。"""
 

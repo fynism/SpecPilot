@@ -96,6 +96,9 @@ Session 命令只在 Agent Loop 轮次之间执行：
 /switch [session-id]  无参数时选择 Session；传完整 ID 时直接切换
 /rename <标题>        重命名当前 Session
 /status               显示当前 Session 和 Spec 状态
+/language             选择全屏 TUI 的界面语言
+/language zh-CN       切换为简体中文
+/language en-US       切换为英文
 ```
 
 每个 Session 独占消息历史和一份结构化 Spec，状态保存在当前 worktree 的
@@ -109,8 +112,11 @@ PgUp/PgDn 或 p/n 用于翻页。管道、CI 等非交互环境会回退为一�
 
 全屏界面持续展示当前 Session、Spec 状态、可滚动的持久化对话、Agent 状态和底部输入框；
 工具协议内容默认不会作为对话展开。输入 `/` 可以查看命令格式和用途，输入命令前缀后按 Tab
-可以自动补全。Clarification 与 Session 选择都在当前 TUI 浮层完成，不会启动嵌套终端应用。
-非交互环境继续使用普通逐行输入且不会写入清屏控制序列。
+可以自动补全。PgUp/PgDn 按可见高度翻阅对话，Ctrl+Home/Ctrl+End 跳到开头或恢复跟随最新
+消息；用户和 Agent 消息使用不同颜色。Clarification、Session 和语言选择都在当前 TUI 浮层
+完成，不会启动嵌套终端应用。当前语言只在本次 TUI 进程内生效，并且只改变界面固定文案；
+不会翻译历史、Spec、Agent Prompt 或模型回答。非交互环境继续使用普通逐行输入且不会写入
+清屏控制序列。
 
 当用户要求导出，或 Agent 判断 Spec 已具备评审条件时，文件会写入：
 
