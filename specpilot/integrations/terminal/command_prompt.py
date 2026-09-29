@@ -46,6 +46,11 @@ class CommandPrompt(Protocol):
 class SlashCommandCompleter(Completer):
     """仅在输入斜杠命令名称时提供格式和用途提示。"""
 
+    def __init__(self, commands: tuple[CommandDefinition, ...] = COMMANDS) -> None:
+        """允许全屏 TUI 注入本地化命令说明，逐行 CLI 保持原有默认值。"""
+
+        self._commands = commands
+
     def get_completions(
         self,
         document: Document,
@@ -57,7 +62,7 @@ class SlashCommandCompleter(Completer):
         prefix = document.text_before_cursor
         if not prefix.startswith("/") or any(character.isspace() for character in prefix):
             return
-        for command in COMMANDS:
+        for command in self._commands:
             if command.name.startswith(prefix.lower()):
                 yield Completion(
                     command.name,

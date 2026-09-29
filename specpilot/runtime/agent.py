@@ -9,6 +9,7 @@
     上下文。Agent Loop 保持框架无关，不直接包含具体 Spec、Skill 或 MCP 的业务判断。
 """
 
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any, Literal
 
@@ -80,6 +81,7 @@ class AgentRuntime:
         tool_executor: ToolExecutor,
         stop_controller: ClarificationStopController,
         max_tool_use_turns: int,
+        event_sink: Callable[[str], None] = print,
     ) -> None:
         """绑定模型、Hook、工具与单次 Loop 预算。"""
 
@@ -91,6 +93,7 @@ class AgentRuntime:
         self._tool_executor = tool_executor
         self._stop_controller = stop_controller
         self._max_tool_use_turns = max_tool_use_turns
+        self._event_sink = event_sink
 
     @property
     def hooks(self) -> HookRegistry:
@@ -142,9 +145,11 @@ class AgentRuntime:
             results = []
             for block in tool_calls:
                 if tools_enabled and not controller.requested:
-                    print(f"\033[33m> {block.name}({block.input})\033[0m")
+                    self._event_sink(f"执行工具：{block.name}")
                     output = self._tool_executor.execute(block.name, block.input)
-                    print(f"\033[34m {output[:200]}\n{'...' if len(output) > 200 else ''}\n\033[0m")
+                    # 工具结果会进入模型上下文和持久化消息；状态栏只报告规模，避免把
+                    # 仓库内容、敏感文本或终端控制字符复制到前端事件流。
+                    self._event_sink(f"工具完成：{block.name} · {len(output)} 字符")
                 else:
                     # 不能只靠提示要求模型停用工具；即使适配器异常返回 tool_use，也必须在
                     # 执行器之前确定性拒绝，保证用户的结束指令不会产生任何工具副作用。
@@ -178,10 +183,11 @@ def build_agent_runtime(
     spec_tools: SpecToolService,
     max_tool_use_turns: int,
     clarification_presenter: ClarificationPresenter | None = None,
+    event_sink: Callable[[str], None] = print,
 ) -> AgentRuntime:
     """为一个 Session 装配独立的 Spec、Hook 与澄清运行状态。"""
 
-    hooks = build_default_hooks(str(workspace_root.resolve()))
+    hooks = build_default_hooks(str(workspace_root.resolve()), event_sink)
     stop_controller = ClarificationStopController()
     hooks.register("ClarificationAnswered", stop_controller.observe_answer_event)
     registry = build_default_registry(
@@ -198,6 +204,7 @@ def build_agent_runtime(
         executor,
         stop_controller,
         max_tool_use_turns,
+        event_sink,
     )
 
 
@@ -216,6 +223,7 @@ def agent_loop(
         TOOL_EXECUTOR,
         CLARIFICATION_STOP_CONTROLLER,
         MAX_TOOL_USE_TURNS,
+        print,
     )
     return runtime.run(
         messages,

@@ -50,31 +50,10 @@ class HookRegistry:
         return None
 
 
-def log_hook(block: ToolCall) -> None:
-    """在工具执行前输出简洁日志，不记录可能敏感的完整参数。"""
-    print(f"[HOOK] {block.name}(...)")
-
-
-def large_output_hook(block: ToolCall, output: str) -> None:
-    """提醒超大工具结果，避免上下文成本和可读性在无感知下恶化。"""
-    if len(str(output)) > 100000:
-        print(f"[HOOK] ⚠ Large output from {block.name}")
-
-
-def summary_hook(messages: list[dict[str, Any]]) -> None:
-    """Agent 停止前统计历史中的工具结果数量。"""
-    tool_count = 0
-    for message in messages:
-        content = message.get("content")
-        if not isinstance(content, list):
-            continue
-        tool_count += sum(
-            1 for block in content if isinstance(block, dict) and block.get("type") == "tool_result"
-        )
-    print(f"\033[90m[HOOK] Stop: session used {tool_count} tool calls\033[0m")
-
-
-def build_default_hooks(workspace_root: str = str(WORKSPACE_ROOT)) -> HookRegistry:
+def build_default_hooks(
+    workspace_root: str = str(WORKSPACE_ROOT),
+    event_sink: Callable[[str], None] = print,
+) -> HookRegistry:
     """装配默认 Hook，并集中体现它们的执行顺序。"""
 
     # 装配与 Hook 定义分离，未来测试或其他前端可创建不同的 Hook 组合。
@@ -83,10 +62,37 @@ def build_default_hooks(workspace_root: str = str(WORKSPACE_ROOT)) -> HookRegist
     def show_workspace(messages: list[dict[str, Any]], query: str) -> None:
         """显示本次运行绑定的目标仓库。"""
 
-        print(f"\033[90m[HOOK] UserPromptSubmit: working in {workspace_root}\033[0m")
+        event_sink(f"工作目录：{workspace_root}")
 
     hooks.register("UserPromptSubmit", show_workspace)
-    hooks.register("PreToolUse", log_hook)
-    hooks.register("PostToolUse", large_output_hook)
-    hooks.register("Stop", summary_hook)
+
+    def report_tool_start(block: ToolCall) -> None:
+        """向当前前端报告工具开始，但不暴露完整参数。"""
+
+        event_sink(f"正在调用工具：{block.name}")
+
+    def report_large_output(block: ToolCall, output: str) -> None:
+        """只在工具结果异常大时报告风险。"""
+
+        if len(str(output)) > 100000:
+            event_sink(f"工具结果较大：{block.name}")
+
+    def report_stop(messages: list[dict[str, Any]]) -> None:
+        """在停止时报告本 Session 使用过的工具结果数量。"""
+
+        tool_count = 0
+        for message in messages:
+            content = message.get("content")
+            if not isinstance(content, list):
+                continue
+            tool_count += sum(
+                1
+                for block in content
+                if isinstance(block, dict) and block.get("type") == "tool_result"
+            )
+        event_sink(f"本轮结束，共包含 {tool_count} 个工具结果。")
+
+    hooks.register("PreToolUse", report_tool_start)
+    hooks.register("PostToolUse", report_large_output)
+    hooks.register("Stop", report_stop)
     return hooks

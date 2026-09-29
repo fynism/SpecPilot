@@ -3,7 +3,7 @@
 import sys
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
-from typing import Any, TextIO
+from typing import Any, Literal, TextIO
 
 from prompt_toolkit.shortcuts import clear
 
@@ -19,6 +19,7 @@ DEFAULT_MESSAGE_LIMIT = 800
 class TranscriptEntry:
     """表示可以安全呈现在终端中的一条对话文本。"""
 
+    role: Literal["user", "assistant"]
     speaker: str
     text: str
 
@@ -45,6 +46,7 @@ def build_transcript(
         speaker = "你" if role == "user" else "Agent"
         visible.append(
             TranscriptEntry(
+                role=role,
                 speaker=speaker,
                 text=_truncate(safe_terminal_text(text), message_limit),
             )
