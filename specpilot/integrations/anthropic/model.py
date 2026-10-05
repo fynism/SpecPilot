@@ -39,13 +39,17 @@ class AnthropicModelClient:
             }
             for tool in tools
         ]
-        response = self._client.messages.create(
-            model=self._model,
-            system=system,
-            messages=cast(Any, messages),
-            tools=cast(Any, anthropic_tools),
-            max_tokens=max_tokens,
-        )
+        request: dict[str, Any] = {
+            "model": self._model,
+            "system": system,
+            "messages": cast(Any, messages),
+            "max_tokens": max_tokens,
+        }
+        # 最终总结轮通过完全省略 tools 参数形成供应商侧硬边界，不能只传空描述后依赖
+        # 模型自行遵守“不要调用工具”的自然语言要求。
+        if anthropic_tools:
+            request["tools"] = anthropic_tools
+        response = self._client.messages.create(**request)
         normalized: list[ModelBlock] = []
         for block in response.content:
             if block.type == "text":

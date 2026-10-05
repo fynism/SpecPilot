@@ -4,6 +4,7 @@ from collections.abc import Iterable
 from typing import Any
 
 from specpilot.capabilities.clarification.models import ClarificationAnswer, ClarificationRequest
+from specpilot.capabilities.clarification.policy import ClarificationStopController
 from specpilot.capabilities.clarification.tool import ClarificationPresenter
 from specpilot.capabilities.spec.operations import SpecToolService
 from specpilot.runtime import agent
@@ -31,12 +32,23 @@ class QueuePresenter(ClarificationPresenter):
         )
 
 
+class StoppingPresenter(ClarificationPresenter):
+    """模拟用户在澄清输入框中明确要求到此为止。"""
+
+    def ask(self, request: ClarificationRequest) -> ClarificationAnswer:
+        """把结束表达作为本次澄清的自由回答。"""
+
+        return ClarificationAnswer(request_id=request.request_id, free_text="到此为止")
+
+
 class ScriptedClient:
     """模拟模型适配边界，每轮返回一批预设响应块。"""
 
     def __init__(self, responses: Iterable[tuple[ModelBlock, ...]]) -> None:
         self._responses = iter(responses)
         self.call_count = 0
+        self.exposed_tools: list[tuple[ToolSpec, ...]] = []
+        self.system_prompts: list[str] = []
 
     def create_message(
         self,
@@ -48,6 +60,8 @@ class ScriptedClient:
         """返回下一轮内容，并记录模型调用次数。"""
 
         self.call_count += 1
+        self.exposed_tools.append(tools)
+        self.system_prompts.append(system)
         return next(self._responses)
 
 
@@ -178,3 +192,80 @@ def test_agent_loop_stops_after_configured_tool_use_turns(monkeypatch: Any, tmp_
     assert resumed_reason == "model_complete"
     assert client.call_count == 3
     assert history[-1]["content"][0]["text"] == "已继续处理"
+
+
+def test_final_response_turn_never_executes_tools(monkeypatch: Any, tmp_path: Any) -> None:
+    """用户结束澄清后的总结轮不暴露工具，并拒绝适配器异常返回的调用。"""
+
+    presenter = QueuePresenter([])
+    hooks = HookRegistry()
+    registry = build_default_registry(presenter, hooks.trigger, tmp_path)
+    executor = ToolExecutor(registry, hooks.trigger)
+    responses: list[tuple[ModelBlock, ...]] = [
+        (tool_call("unexpected", "get_spec", {}),),
+        (TextBlock(text="以下是基于已有对话的总结。"),),
+    ]
+    client = ScriptedClient(responses)
+    monkeypatch.setattr(agent, "CLIENT", client)
+    monkeypatch.setattr(agent, "HOOKS", hooks)
+    monkeypatch.setattr(agent, "TOOL_REGISTRY", registry)
+    monkeypatch.setattr(agent, "TOOL_EXECUTOR", executor)
+    executed: list[str] = []
+
+    def record_unexpected_execution(name: str, _input: dict[str, Any]) -> str:
+        """记录任何越过总结轮边界的工具执行。"""
+
+        executed.append(name)
+        return ""
+
+    monkeypatch.setattr(executor, "execute", record_unexpected_execution)
+    history: list[dict[str, Any]] = [{"role": "user", "content": "到此为止"}]
+
+    stop_reason = agent.agent_loop(history, tools_enabled=False)
+
+    assert stop_reason == "model_complete"
+    assert executed == []
+    assert client.exposed_tools == [(), ()]
+    assert all("No tools are available" in system for system in client.system_prompts)
+    assert "本轮禁止调用工具" in history[2]["content"][0]["content"]
+
+
+def test_stop_answer_inside_clarification_disables_following_tools(
+    monkeypatch: Any,
+    tmp_path: Any,
+) -> None:
+    """输入框中的结束语立即拒绝同批剩余调用，并让下一次模型调用只做总结。"""
+
+    controller = ClarificationStopController()
+    hooks = HookRegistry()
+    executed: list[str] = []
+    hooks.register("PreToolUse", lambda call: executed.append(call.name))
+    hooks.register("ClarificationAnswered", controller.observe_answer_event)
+    registry = build_default_registry(
+        StoppingPresenter(),
+        hooks.trigger,
+        tmp_path,
+    )
+    executor = ToolExecutor(registry, hooks.trigger)
+    responses: list[tuple[ModelBlock, ...]] = [
+        (
+            tool_call("clarify", "request_clarification", clarification("还需要确认权限吗？")),
+            tool_call("must_not_run", "get_spec", {}),
+        ),
+        (TextBlock(text="已停止澄清，以下是当前总结。"),),
+    ]
+    client = ScriptedClient(responses)
+    monkeypatch.setattr(agent, "CLIENT", client)
+    monkeypatch.setattr(agent, "HOOKS", hooks)
+    monkeypatch.setattr(agent, "TOOL_REGISTRY", registry)
+    monkeypatch.setattr(agent, "TOOL_EXECUTOR", executor)
+    history: list[dict[str, Any]] = [{"role": "user", "content": "继续完善需求"}]
+
+    stop_reason = agent.agent_loop(history, stop_controller=controller)
+
+    assert stop_reason == "model_complete"
+    assert executed == ["request_clarification"]
+    assert len(client.exposed_tools[0]) == 8
+    assert client.exposed_tools[1] == ()
+    assert "本轮禁止调用工具" in history[2]["content"][1]["content"]
+    assert history[-1]["content"][0]["text"] == "已停止澄清，以下是当前总结。"

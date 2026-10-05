@@ -68,5 +68,28 @@
       "max_clarifications": 2,
       "required_spec_entities": ["evidence"]
     }
+  },
+  {
+    "id": "explicit_clarification_stop",
+    "category": "用户主动结束澄清",
+    "user_input": "到此为止。",
+    "fixture": "evals/fixtures/export_project",
+    "scoring": "deterministic_trace_v1",
+    "expectation": {
+      "required_tools": [],
+      "forbidden_tools": [
+        "list_repository_files",
+        "search_repository",
+        "read_repository_file",
+        "request_clarification",
+        "get_spec",
+        "apply_spec_patch",
+        "validate_spec",
+        "export_spec"
+      ],
+      "min_clarifications": 0,
+      "max_clarifications": 0,
+      "required_spec_entities": []
+    }
   }
 ]

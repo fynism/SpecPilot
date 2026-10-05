@@ -133,6 +133,26 @@ def test_cancellation_does_not_create_an_answer() -> None:
     assert events == ["ClarificationRequested", "ClarificationCancelled"]
 
 
+def test_answer_can_combine_an_option_with_free_text() -> None:
+    """用户可以选择方向并补充不能被预设选项表达的约束。"""
+
+    answer = ClarificationAnswer(
+        request_id="Q-123456789abc",
+        selected_option_id="admin_only",
+        free_text="但项目所有者也可以授权一次性导出。",
+    )
+
+    assert answer.selected_option_id == "admin_only"
+    assert answer.free_text == "但项目所有者也可以授权一次性导出。"
+
+
+def test_answer_requires_an_option_or_free_text() -> None:
+    """空提交不能被记录成用户已经回答。"""
+
+    with pytest.raises(ValidationError, match="selected_option_id, free_text, or both"):
+        ClarificationAnswer(request_id="Q-123456789abc")
+
+
 def test_console_enter_confirms_the_recommended_option() -> None:
     """The default is convenient but still requires an explicit Enter press."""
 
@@ -143,6 +163,18 @@ def test_console_enter_confirms_the_recommended_option() -> None:
 
     assert answer.selected_option_id == "admin_only"
     assert answer.source == "user"
+
+
+def test_console_accepts_free_text_without_an_other_option() -> None:
+    """后备界面允许用户直接键入回答，不要求先选择“其他”。"""
+
+    request = ClarificationRequest.model_validate(make_input().model_dump())
+
+    with patch("builtins.input", return_value="管理员和项目所有者"):
+        answer = ConsoleClarificationPresenter().ask(request)
+
+    assert answer.selected_option_id is None
+    assert answer.free_text == "管理员和项目所有者"
 
 
 def test_registered_tool_returns_the_presenter_choice() -> None:

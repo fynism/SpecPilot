@@ -9,23 +9,25 @@
     Agent Runtime 未来也能被 Web 或服务端接口复用。
 """
 
-from typing import Any
+import sys
+from collections.abc import Callable
+from typing import Any, Literal
 
-try:
-    import readline
+from specpilot.capabilities.clarification.policy import is_clarification_stop_request
+from specpilot.capabilities.clarification.tool import ClarificationPresenter
+from specpilot.config import WORKSPACE_ROOT, Settings, load_settings
+from specpilot.integrations.anthropic.model import AnthropicModelClient
+from specpilot.integrations.filesystem.session_store import LocalSessionStore
+from specpilot.integrations.terminal.command_prompt import build_command_prompt
+from specpilot.integrations.terminal.session_picker import SessionPicker, build_session_picker
+from specpilot.integrations.terminal.session_presenter import build_session_presenter
+from specpilot.integrations.terminal.tui import FullScreenTui
+from specpilot.runtime.agent import AgentRuntime, build_agent_runtime
+from specpilot.runtime.model import ModelClient
+from specpilot.runtime.session.manager import SessionManager
+from specpilot.runtime.session.store import SessionNotFoundError, SessionStorageError
 
-    # readline 只影响终端编辑体验；Windows 不提供该模块时继续正常运行。
-    bind = getattr(readline, "parse_and_bind", None)
-    if callable(bind):
-        bind("set bind-tty-special-chars off")
-        bind("set input-meta on")
-        bind("set output-meta on")
-        bind("set convert-meta off")
-except ImportError:
-    pass
-
-from specpilot.config import load_settings
-from specpilot.runtime.agent import HOOKS, agent_loop
+SessionCommandResult = Literal["not_command", "handled", "session_changed", "quit"]
 
 
 def print_final_response(history: list[dict[str, Any]]) -> None:
@@ -37,43 +39,226 @@ def print_final_response(history: list[dict[str, Any]]) -> None:
                 print(block.get("text", ""))
 
 
-def main() -> None:
-    """启动交互会话并在多次用户输入之间保留消息历史。"""
-    try:
-        # CLI 启动时明确校验配置；导入 Agent 模块和离线测试不需要真实密钥。
-        load_settings()
-    except RuntimeError as exc:
-        print(f"配置错误：{exc}")
-        return
+def print_session_status(
+    manager: SessionManager,
+    emit: Callable[[str], None] = print,
+) -> None:
+    """显示当前 Session 与其独占 Spec 的概要。"""
 
-    print("SpecPilot: 通过结构化澄清帮助你定义软件需求")
-    print("SpecPilot: Clarify software requirements before implementation\n")
-    print("输入一个问题，按Enter发送。输入q退出。")
-    print("Enter a question, press Enter to send. Type q to quit.\n")
+    session = manager.current
+    spec = manager.current_spec()
+    emit(
+        f"当前 Session：{session.session_id} · {session.title} · {session.status}\n"
+        f"当前 Spec：{spec.spec_id} · v{spec.version} · {spec.status}"
+    )
 
-    # history 是当前 CLI 会话的多轮模型上下文；结构化 Spec 状态将独立维护。
-    history: list[dict[str, Any]] = []
+
+def handle_session_command(
+    query: str,
+    manager: SessionManager,
+    emit: Callable[[str], None] = print,
+    *,
+    session_picker: SessionPicker | None = None,
+) -> SessionCommandResult:
+    """处理只允许在 Agent Loop 轮次之间执行的 Session 命令。"""
+
+    stripped = query.strip()
+    if not stripped.startswith("/") or stripped.lower() == "/done":
+        return "not_command"
+
+    command, *arguments = stripped.split(maxsplit=1)
+    argument = arguments[0].strip() if arguments else ""
+    command = command.lower()
+
+    if command == "/quit":
+        return "quit"
+    if command == "/new":
+        session = manager.create(argument or "新对话")
+        emit(f"已创建并切换到 Session：{session.session_id} · {session.title}")
+        return "session_changed"
+    if command == "/sessions":
+        active_id = manager.current.session_id
+        for session in manager.list_sessions():
+            marker = "*" if session.session_id == active_id else " "
+            emit(f"{marker} {session.session_id} · {session.title} · {session.status}")
+        return "handled"
+    if command == "/switch":
+        if not argument:
+            picker = session_picker or build_session_picker()
+            selected_session_id = picker.pick(
+                manager.list_sessions(),
+                manager.current.session_id,
+            )
+            if selected_session_id is None:
+                return "handled"
+            argument = selected_session_id
+        try:
+            session = manager.switch(argument)
+        except (SessionNotFoundError, SessionStorageError) as exc:
+            emit(f"无法切换 Session：{exc}")
+            return "handled"
+        emit(f"已切换到 Session：{session.session_id} · {session.title}")
+        if session.status == "interrupted":
+            emit("该 Session 的上一轮未完整结束，系统不会自动重放模型或工具调用。")
+        return "session_changed"
+    if command == "/rename":
+        if not argument:
+            emit("用法：/rename <标题>")
+            return "handled"
+        session = manager.rename(argument)
+        emit(f"Session 已重命名为：{session.title}")
+        return "handled"
+    if command == "/status":
+        print_session_status(manager, emit)
+        return "handled"
+
+    emit(f"未知命令：{command}")
+    return "handled"
+
+
+def build_session_runtime(
+    manager: SessionManager,
+    settings: Settings,
+    client: ModelClient | None = None,
+    *,
+    clarification_presenter: ClarificationPresenter | None = None,
+    event_sink: Callable[[str], None] = print,
+) -> AgentRuntime:
+    """为当前 Session 装配独占 Spec 与澄清状态的 Agent Runtime。"""
+
+    runtime_client = client or AnthropicModelClient(
+        api_key=settings.api_key,
+        model=settings.model,
+        base_url=settings.base_url,
+    )
+    return build_agent_runtime(
+        client=runtime_client,
+        workspace_root=WORKSPACE_ROOT,
+        spec_tools=manager.spec_tools,
+        max_tool_use_turns=settings.max_tool_use_turns,
+        clarification_presenter=clarification_presenter,
+        event_sink=event_sink,
+    )
+
+
+def run_console(
+    manager: SessionManager,
+    settings: Settings,
+) -> None:
+    """在非 TTY 环境保留可管道化的逐行控制台模式。"""
+
+    session = manager.current
+    runtime = build_session_runtime(manager, settings)
+    command_prompt = build_command_prompt()
+    session_picker = build_session_picker()
+    session_presenter = build_session_presenter()
+    session_presenter.present(session, manager.current_spec())
+
     while True:
         try:
-            query = input("\033[36mSpecPilot >> \033[0m")
+            query = command_prompt.read()
         except (EOFError, KeyboardInterrupt):
             break
 
         if query.strip().lower() in ("q", "exit", ""):
             break
 
+        command_result = handle_session_command(
+            query,
+            manager,
+            session_picker=session_picker,
+        )
+        if command_result == "quit":
+            break
+        if command_result == "session_changed":
+            runtime = build_session_runtime(manager, settings)
+            session_presenter.present(manager.current, manager.current_spec())
+            continue
+        if command_result == "handled":
+            print()
+            continue
+
         # 用户输入先经过 Hook，轮次限制或未来的上下文注入可以在调用模型前介入。
-        hook_result = HOOKS.trigger("UserPromptSubmit", history, query)
+        hook_result = runtime.hooks.trigger("UserPromptSubmit", manager.messages, query)
         if hook_result == "stop":
             break
 
-        history.append({"role": "user", "content": query})
-        stop_reason = agent_loop(history)
+        manager.begin_turn(query)
+        # 用户主动结束澄清时只允许模型基于已有上下文总结；本轮不再暴露或执行工具。
+        tools_enabled = not is_clarification_stop_request(query)
+        try:
+            stop_reason = runtime.run(manager.messages, tools_enabled=tools_enabled)
+        except KeyboardInterrupt:
+            manager.interrupt_turn()
+            runtime = build_session_runtime(manager, settings)
+            print("\n当前轮次已中断并保存；系统不会自动重放模型或工具调用。")
+            continue
+        except Exception as exc:
+            manager.interrupt_turn()
+            runtime = build_session_runtime(manager, settings)
+            # 外部 SDK 异常文本可能携带请求数据；CLI 只显示异常类型，完整诊断以后进入脱敏日志。
+            print(f"Agent 运行失败：{type(exc).__name__}。当前轮次已标记为中断。")
+            continue
+
+        manager.complete_turn()
         if stop_reason == "max_tool_use_turns":
             print("本轮已达到工具调用轮次上限。已有结果已保留，你可以继续下一轮对话。")
         else:
-            print_final_response(history)
+            print_final_response(manager.messages)
         print()
+
+
+def main() -> None:
+    """TTY 启动全屏 TUI，重定向环境使用兼容的逐行控制台。"""
+
+    try:
+        # CLI 启动时明确校验配置；导入 Agent 模块和离线测试不需要真实密钥。
+        settings = load_settings()
+    except RuntimeError as exc:
+        print(f"配置错误：{exc}")
+        return
+
+    manager = SessionManager(LocalSessionStore(WORKSPACE_ROOT))
+    try:
+        manager.start()
+    except SessionStorageError as exc:
+        # 损坏状态不能被静默替换为空对话，否则用户可能在不知情时覆盖原始数据。
+        print(f"Session 恢复失败：{exc}")
+        return
+
+    if sys.stdin.isatty() and sys.stdout.isatty():
+
+        def runtime_factory(
+            presenter: ClarificationPresenter,
+            event_sink: Callable[[str], None],
+        ) -> AgentRuntime:
+            """为 TUI 当前 Session 创建绑定同一事件循环的 Agent Runtime。"""
+
+            return build_session_runtime(
+                manager,
+                settings,
+                clarification_presenter=presenter,
+                event_sink=event_sink,
+            )
+
+        def command_handler(
+            query: str,
+            emit: Callable[[str], None],
+        ) -> SessionCommandResult:
+            """让 TUI 复用既有确定性 Session 命令路由。"""
+
+            return handle_session_command(query, manager, emit)
+
+        tui = FullScreenTui(
+            manager,
+            runtime_factory,
+            command_handler,
+            lambda query: not is_clarification_stop_request(query),
+        )
+        tui.run()
+        return
+
+    run_console(manager, settings)
 
 
 if __name__ == "__main__":

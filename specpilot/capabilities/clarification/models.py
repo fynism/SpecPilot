@@ -50,23 +50,23 @@ class ClarificationRequest(RequestClarificationInput):
 
 
 class ClarificationAnswer(BaseModel):
-    """由用户确认的选项或自定义答案。"""
+    """由用户确认的选项、自由文字，或二者组合。"""
 
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
     request_id: str
     selected_option_id: str | None = None
-    custom_answer: str | None = Field(default=None, min_length=1, max_length=1000)
+    free_text: str | None = Field(default=None, min_length=1, max_length=1000)
     source: Literal["user"] = "user"
 
     @model_validator(mode="after")
-    def validate_exactly_one_answer(self) -> "ClarificationAnswer":
-        """拒绝缺少答案或同时包含两种答案的结果。"""
+    def validate_answer_exists(self) -> "ClarificationAnswer":
+        """至少要求用户确认一个选项或输入一段文字。"""
 
         has_option = self.selected_option_id is not None
-        has_custom = self.custom_answer is not None
-        if has_option == has_custom:
-            raise ValueError("provide exactly one of selected_option_id or custom_answer")
+        has_free_text = self.free_text is not None
+        if not has_option and not has_free_text:
+            raise ValueError("provide selected_option_id, free_text, or both")
         return self
 
 
