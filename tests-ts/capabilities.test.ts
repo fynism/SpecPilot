@@ -177,6 +177,20 @@ describe('Spec 原子语义与版本', () => {
 });
 
 describe('仓库调查边界', () => {
+  it('保留 Python 通用换行语义，CR、LF 与 CRLF 都按独立行读取和搜索', async () => {
+    const root = temporary();
+    writeFileSync(join(root, 'mixed.txt'), 'first\rsecond\r\nthird\nfourth\r');
+    const reader = new RepositoryReader(root);
+    const result = JSON.parse(
+      await reader.readFile(
+        readInputSchema.parse({ path: 'mixed.txt', start_line: 2, end_line: 4 }),
+      ),
+    );
+    expect(result.content).toBe('second\nthird\nfourth\n');
+    expect(result.end_line).toBe(4);
+    const search = JSON.parse(await reader.search(searchInputSchema.parse({ query: 'third' })));
+    expect(search.matches[0]?.line).toBe(3);
+  });
   it('稳定列表忽略依赖，支持深度与结果截断', async () => {
     const root = temporary();
     mkdirSync(join(root, 'nested'));

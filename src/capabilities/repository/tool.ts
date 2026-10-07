@@ -43,15 +43,18 @@ async function* lines(path: string): AsyncGenerator<string> {
   try {
     for await (const chunk of stream) {
       pending += decoder.decode(chunk as Buffer, { stream: true });
-      let index = pending.indexOf('\n');
+      let index = pending.search(/[\r\n]/);
       while (index >= 0) {
-        yield `${pending.slice(0, index).replace(/\r$/, '')}\n`;
-        pending = pending.slice(index + 1);
-        index = pending.indexOf('\n');
+        // CR 在块尾时等待下一块，避免把跨块 CRLF 错算为两行。
+        if (pending[index] === '\r' && index === pending.length - 1) break;
+        const separatorLength = pending[index] === '\r' && pending[index + 1] === '\n' ? 2 : 1;
+        yield `${pending.slice(0, index)}\n`;
+        pending = pending.slice(index + separatorLength);
+        index = pending.search(/[\r\n]/);
       }
     }
     pending += decoder.decode();
-    if (pending) yield pending;
+    if (pending) yield pending.replace(/\r$/, '\n');
   } finally {
     stream.destroy();
   }
