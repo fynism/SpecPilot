@@ -33,19 +33,19 @@
 
 `tooling/` 只包含所有 Tool 共享的执行机制：
 
-- `contracts.py`：输入、声明、调用和注册项；
-- `registry.py`：名称到工具实现的注册；
-- `executor.py`：校验、Policy/Hook、执行和错误转换；
-- `catalog.py`：当前运行模式默认启用的内置工具装配。
+- `contracts.ts`：输入、声明、调用和注册项；
+- `registry.ts`：名称到工具实现的注册；
+- `executor.ts`：校验、Policy/Hook、执行和错误转换；
+- `catalog.ts`：当前运行模式默认启用的内置工具装配。
 
 具体 Tool 必须跟随所属能力放入 `capabilities/<name>/`。例如仓库读取属于
 `capabilities/repository/`，Spec 操作属于 `capabilities/spec/`。不得因为实现最终会被模型
 调用，就把所有具体 Tool 再集中到 `tooling/`；那会让一次能力修改跨越多个类型目录，降低
 locality。
 
-新增 Tool 的推荐顺序是：先在能力模块中定义严格输入与处理函数，再通过
-`tooling/catalog.py` 注册，最后通过 `ToolExecutor` 的公开接口测试成功、校验失败、Hook 拒绝
-和处理异常。Tool 名称和模型可见 Schema 属于稳定接口，移动 Python 文件不能改变它们。
+新增 Tool 的推荐顺序是：先在能力模块中定义严格 Zod 输入与处理函数，再通过
+`tooling/catalog.ts` 注册，最后通过 `ToolExecutor` 的公开接口测试成功、校验失败、Hook 拒绝
+和处理异常。Tool 名称和模型可见 Schema 属于稳定接口，移动 TypeScript 文件不能改变它们。
 
 ## Shell 工具
 

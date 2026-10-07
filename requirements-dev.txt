@@ -1,4 +1,0 @@
-# Development compatibility entry point for pip users.
-# Dependency versions are declared in pyproject.toml and resolved in uv.lock.
--e .[dev]
-

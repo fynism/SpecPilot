@@ -1,6 +1,7 @@
 {
   "name": "specpilot",
   "version": "0.1.0",
+  "license": "UNLICENSED",
   "description": "面向软件项目的需求澄清与结构化 Specification CLI",
   "type": "module",
   "bin": {
@@ -12,17 +13,18 @@
     ".env.example"
   ],
   "engines": {
-    "node": ">=22"
+    "node": ">=22.12.0"
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc --noEmit",
-    "lint": "biome check src tests-ts package.json biome.json tsconfig.json tsconfig.build.json vitest.config.ts",
-    "format": "biome check --write src tests-ts package.json biome.json tsconfig.json tsconfig.build.json vitest.config.ts",
+    "lint": "biome check src tests-ts scripts package.json biome.json tsconfig.json tsconfig.build.json vitest.config.ts",
+    "format": "biome check --write src tests-ts scripts package.json biome.json tsconfig.json tsconfig.build.json vitest.config.ts",
     "tests": "vitest run",
     "test": "npm run tests",
     "start": "node dist/cli.js",
     "dev": "tsx src/cli.tsx",
+    "smoke:package": "node scripts/verify-package.mjs",
     "prepack": "npm run build"
   },
   "dependencies": {

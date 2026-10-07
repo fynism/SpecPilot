@@ -1,0 +1,25 @@
+name: CLI checks
+on:
+  push:
+  pull_request:
+jobs:
+  checks:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm run tests
+      - run: node dist/cli.js --help
+      - run: node dist/cli.js --version
+      - run: npm pack --dry-run
+      - run: npm run smoke:package

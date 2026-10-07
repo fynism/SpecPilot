@@ -43,27 +43,21 @@ build context → call model → validate action → evaluate policy
 
 ### 当前全屏 TUI 边界
 
-TTY 环境由一个 `prompt_toolkit.Application(full_screen=True)` 独占 alternate screen，统一管理
-对话区、输入区、命令补全、Session 选择与 Clarification 浮层；不得在它内部再次调用独立的
-`Application.run()`。非 TTY 环境继续使用逐行控制台，保证管道和 CI 不接收控制序列。
+TTY 环境由一个 Ink / React 应用独占 alternate screen，统一管理对话区、输入、命令提示、
+Session 选择和 Clarification；`@inkjs/ui` 提供选择列表与运行状态组件。非 TTY 使用无控制
+序列的逐行 console；两个前端共享 `bootstrap.ts` 和同一个 Agent Runtime。
 
-传统 Agent Loop 在单个后台 Worker 中同步运行，TUI 事件循环只负责输入和渲染。Runtime 与
-Hook 不得直接 `print()` 到 alternate screen，而应通过注入的事件 sink 请求 UI 更新。Session
-切换仍只允许在 Worker 空闲时发生；完整轮次返回前不得把中间消息伪装成稳定恢复点。
+模型与工具运行使用 Promise / async iterator，UI 不阻塞事件循环。Runtime 与 Hook 不直接
+打印，注入的 event sink 更新状态。Session 切换只在轮次之间执行；完整 Loop 返回前不得把
+中间消息伪装成稳定恢复点。
 
-ClarificationPresenter 保持同步端口：Worker 发出请求后等待，TUI 在同一 Application 中展示
-浮层并返回经过请求 ID 绑定的答案。TUI 退出必须唤醒尚在等待的 Presenter，避免后台线程永久
-阻塞。当前模型与工具适配器没有协作式取消接口，因此运行中的 Ctrl+C 不会强制杀死 Worker；
-界面会明确拒绝该操作，而不是伪造已经取消。后续增加取消时必须先把取消令牌贯穿模型、工具和
-Session 状态机。
+ClarificationPresenter 使用异步端口，答案仍必须绑定请求 ID 并在服务边界复验。应用卸载时
+拒绝等待中的澄清 Promise，避免永远等待。模型和工具仍没有协作式取消接口；运行中 Ctrl+C
+或 Ctrl+Q 明确拒绝退出，不伪造已取消。未来取消必须贯穿模型、工具和 Session 状态机。
 
-Transcript 必须根据结构化消息 `role` 选择样式，不能从本地化后的“你”或“SpecPilot”等
-标签反推角色。用户向上翻阅后应暂停自动跟随，新消息不得强制改变阅读位置；只有回到底部、
-切换 Session 或主动提交新请求时恢复跟随。
-
-TUI 自身的状态、帮助、角色标签和浮层文案统一经 TUI i18n 词条键读取。切换 locale 只改变
-当前进程的界面渲染，不得翻译或改写 Session 历史、Spec、Agent Prompt、工具描述与模型回答；
-这些边界若需国际化，应另行设计并增加 Agent Eval。
+Transcript 根据结构化 role 渲染。用户翻页后暂停跟随，新消息不强制改变阅读位置；回到底部、
+切换 Session 或提交新请求恢复跟随。固定界面文案经稳定 i18n 键读取，locale 只改变当前进程
+的 UI，不翻译 Session、Spec、Prompt、工具描述或模型回答。
 
 ### 用户主动结束澄清
 

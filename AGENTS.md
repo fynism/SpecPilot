@@ -7,7 +7,7 @@
 
 1. 阅读 [Engineering Handbook](docs/engineering/README.md)。
 2. 始终阅读 [架构规范](docs/engineering/architecture.md) 和
-   [Python 规范](docs/engineering/python.md)。
+   [TypeScript 规范](docs/engineering/typescript.md)。
 3. 根据任务类型阅读下表中的专项规范。一个任务可能命中多行，必须全部阅读。
 
 | 任务涉及 | 必须阅读 |
@@ -43,5 +43,5 @@
 5. 运行受影响测试，再运行格式、静态检查和完整测试集。
 6. 汇报修改、验证结果、未验证部分及剩余风险。
 
-当文档中的目标命令尚未在 `pyproject.toml` 或 CI 中配置时，不得假装已执行；应明确
+当文档中的目标命令尚未在 `package.json` 或 CI 中配置时，不得假装已执行；应明确
 报告缺失，并在获得任务授权后补齐工程配置。

@@ -4,9 +4,16 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { createSpecification, specificationSchema } from '../src/capabilities/spec/models.js';
 import { loadSettings } from '../src/config.js';
+import { FINAL_RESPONSE_SYSTEM_SUFFIX, SYSTEM } from '../src/runtime/prompts.js';
 import { sessionSchema } from '../src/runtime/session/models.js';
 
 describe('严格契约与兼容配置', () => {
+  it('模型角色与工具边界提示逐字保留原 Python 版本', () => {
+    const prompts = JSON.parse(
+      readFileSync(new URL('./fixtures/python-prompts.json', import.meta.url), 'utf8'),
+    );
+    expect({ SYSTEM, FINAL_RESPONSE_SYSTEM_SUFFIX }).toEqual(prompts);
+  });
   it('读取真实 Python 序列化的 Session 与连续 Spec 历史', () => {
     const original = JSON.parse(
       readFileSync(new URL('./fixtures/python-session-v1.json', import.meta.url), 'utf8'),

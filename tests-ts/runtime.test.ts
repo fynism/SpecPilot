@@ -158,6 +158,31 @@ describe('澄清信任与结束边界', () => {
 });
 
 describe('离线 Agent 端到端', () => {
+  it('Stop Hook 可以要求一次确定性收尾，再把控制权交还用户', async () => {
+    const fixture = temporaryManager();
+    try {
+      const client = new ScriptedClient([
+        [{ type: 'text', text: '初次回答' }],
+        [{ type: 'text', text: '收尾完成' }],
+      ]);
+      const runtime = buildSessionRuntime(
+        fixture.manager,
+        fixture.root,
+        settings,
+        recommendedPresenter,
+        () => undefined,
+        client,
+      );
+      runtime.hooks.register('Stop', () =>
+        client.exposedTools.length === 1 ? '请完成收尾检查' : undefined,
+      );
+      expect(await runSessionTurn(fixture.manager, runtime, '需求')).toBe('model_complete');
+      expect(fixture.manager.messages[2]).toEqual({ role: 'user', content: '请完成收尾检查' });
+      expect(fixture.manager.current.status).toBe('waiting_for_user');
+    } finally {
+      fixture.cleanup();
+    }
+  });
   it('调查、两次澄清、Patch、校验与导出，工具调用 ID 成对并保存完整 Session', async () => {
     const fixture = temporaryManager();
     try {

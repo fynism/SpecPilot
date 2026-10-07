@@ -1,38 +1,19 @@
 # SpecPilot
 
-SpecPilot 是一个面向软件项目的需求澄清 Agent。它通过连续的命令行对话调查现有仓库、识别
-关键歧义、向用户提供带推荐项的选择，并把确认的信息整理成可校验、可追溯的结构化
-Specification（以下简称 Spec）。
-
-项目目前处于 `0.1.0` MVP 阶段，使用 Anthropic 模型，并保留传统 Agent Loop：模型生成响应
-并按需调用工具，工具结果返回给模型，循环持续到模型不再调用工具。
-
-## 当前能力
-
-- 在当前 worktree 中创建、切换和恢复多个本地持久化对话；
-- 在工作区边界内列出、搜索和按行读取 UTF-8 仓库文件；
-- 用方向键选择澄清选项，默认高亮推荐项，同时支持直接输入或为选项补充文字；
-- 管理包含目标、范围、需求、决策、假设、未决问题、验收条件和证据的结构化 Spec；
-- 确定性校验 Spec 的阻塞问题与验收覆盖；
-- 将 Spec 导出为 JSON 事实源和 Markdown 阅读视图；
-- 用户明确结束澄清后，执行一次不开放任何工具的最终总结。
-
-## 环境要求
-
-- Python 3.11 或更高版本；
-- 可用的 Anthropic API Key；
-- 推荐使用 [uv](https://docs.astral.sh/uv/) 管理虚拟环境和锁定依赖。
+SpecPilot 是面向软件项目的需求澄清 CLI。它调查现有仓库、识别关键歧义，通过连续对话确认
+需求，并生成可校验、可追溯的结构化 Specification。当前版本为 `0.1.0`，使用 TypeScript、
+Node.js、Ink 与 Anthropic 官方 SDK，没有额外的 Agent 编排框架。
 
 ## 安装与配置
 
-使用 uv：
+需要 Node.js **22.12 或更高版本**。从源码安装和验证：
 
 ```powershell
-uv sync --all-extras
-if (-not (Test-Path .env)) { Copy-Item .env.example .env }
+npm ci
+npm run build
 ```
 
-然后编辑 `.env`：
+在目标工作区创建 `.env`（可复制本仓库的 `.env.example`）：
 
 ```dotenv
 ANTHROPIC_API_KEY=你的_API_Key
@@ -41,115 +22,110 @@ ANTHROPIC_BASE_URL=
 MAX_TOOL_USE_TURNS=20
 ```
 
-`ANTHROPIC_BASE_URL` 是可选项；`MAX_TOOL_USE_TURNS` 必须是大于 0 的整数。不要提交包含
-真实密钥的 `.env` 文件。
-
-也可以使用传统 pip 虚拟环境：
-
-```powershell
-py -m venv .venv
-.venv\Scripts\Activate.ps1
-python -m pip install -r requirements-dev.txt
-if (-not (Test-Path .env)) { Copy-Item .env.example .env }
-```
-
-只安装运行依赖时，将 `requirements-dev.txt` 替换为 `requirements.txt`。
-
-## 使用方法
-
-启动 CLI：
+保留原环境变量名称、默认工具轮次 `20` 和 `.env` 优先于同名进程变量的行为。
+`MAX_TOOL_USE_TURNS` 必须是正整数；`ANTHROPIC_BASE_URL` 可选。不要提交真实密钥。
+配置在启动时读取，导入模块、查看帮助或版本不需要 API Key。
 
 ```powershell
-uv run specpilot
+# 在本仓库启动
+npm start
+
+# 开发模式
+npm run dev
+
+# 本地打包安装，验证 npm CLI 分发
+npm pack
+npm install --global .\specpilot-0.1.0.tgz
+
+# 安装后在目标仓库中启动
+specpilot
+specpilot --help
+specpilot --version
 ```
 
-兼容入口仍然可用：
+也可以在任意目标仓库运行 `node <本仓库绝对路径>/dist/cli.js`。本仓库尚未要求发布到
+npm registry；以上打包和安装都可以在本地完成。
 
-```powershell
-uv run python code.py
-```
+## 使用
 
-启动后直接描述需求，例如：
+在 CLI 中直接描述需求。交互终端进入 Ink 全屏界面，退出后恢复原终端；管道和 CI 使用
+普通逐行控制台，不输出 ANSI 清屏或颜色控制序列。
 
 ```text
-SpecPilot >> 我想为这个项目增加导出功能，请先调查现有代码并帮我补全需求。
-```
-
-出现澄清问题时，可以使用：
-
-- `↑` / `↓`：移动并选中选项；
-- 直接输入文字：不选择预设项，提交自己的回答；
-- 输入文字后再使用方向键：把文字作为所选项的补充条件；
-- `Tab`：选中或取消当前高亮项；
-- `Enter`：确认当前答案；
-- `Esc` 或 `Ctrl+C`：取消当前澄清。
-
-输入 `/done`、`到此为止`、`先到这里`、`停止澄清` 等明确结束语后，Agent 的下一次响应只会
-总结当前已知信息和未决项，不会调用任何工具。该响应结束后仍可继续输入新需求。全屏 TUI
-使用 `/quit` 或 `Ctrl+Q` 退出；非交互控制台仍兼容 `q`、`exit` 和空输入。
-
-Session 命令只在 Agent Loop 轮次之间执行：
-
-```text
-/new [标题]          创建并切换到新 Session
-/sessions            列出当前 worktree 中的 Session
-/switch [session-id]  无参数时选择 Session；传完整 ID 时直接切换
+/new [标题]           创建并切换 Session
+/sessions             列出当前 worktree 的 Session
+/switch [session-id]   无参数时选择，传完整 ID 时直接切换
 /rename <标题>        重命名当前 Session
 /status               显示当前 Session 和 Spec 状态
-/language             选择全屏 TUI 的界面语言
-/language zh-CN       切换为简体中文
-/language en-US       切换为英文
+/done                 结束澄清，只总结已有信息
+/language [zh-CN|en-US] 切换全屏界面语言
+/quit                 退出
 ```
 
-每个 Session 独占消息历史和一份结构化 Spec，状态保存在当前 worktree 的
-`.specpilot/sessions/`。CLI 重启后自动恢复上次活动 Session；如果上次退出发生在 Agent Loop
-中间，只会标记并提示该轮已中断，不会自动重放模型或工具调用。MVP 不支持并发写入同一个
-Session，也不在不同 worktree 之间自动共享 Session。
+全屏界面支持斜杠命令提示、Tab 补全、输入历史、PgUp/PgDn 翻阅对话、Ctrl+Home 跳到开头、
+Ctrl+End 恢复跟随最新消息，以及 Ctrl+Q 退出。用户和 Agent 按结构化角色显示不同颜色。
+Session 选择每页 10 项，PgUp/PgDn 或 p/n 翻页，Enter 明确确认，Esc 取消。
 
-交互终端会进入独立的全屏 TUI；退出后恢复原终端，TUI 对话不会写入 PowerShell 等宿主终端
-的 scrollback。无参数 `/switch` 在同一 TUI 中打开浮层，支持方向键选择并以每页 10 条分页；
-PgUp/PgDn 或 p/n 用于翻页。管道、CI 等非交互环境会回退为一次性编号列表。
+澄清界面默认高亮推荐项；只有用户提交后才形成答案。方向键选择其他选项；直接输入是自由
+回答；输入文字后按方向键或 Tab，可同时提交选项与补充。Enter 提交，Esc/Ctrl+C 取消。
+管道模式使用编号选择，空行主动确认推荐项，也允许直接输入回答。
 
-全屏界面持续展示当前 Session、Spec 状态、可滚动的持久化对话、Agent 状态和底部输入框；
-工具协议内容默认不会作为对话展开。输入 `/` 可以查看命令格式和用途，输入命令前缀后按 Tab
-可以自动补全。PgUp/PgDn 按可见高度翻阅对话，Ctrl+Home/Ctrl+End 跳到开头或恢复跟随最新
-消息；用户和 Agent 消息使用不同颜色。Clarification、Session 和语言选择都在当前 TUI 浮层
-完成，不会启动嵌套终端应用。当前语言只在本次 TUI 进程内生效，并且只改变界面固定文案；
-不会翻译历史、Spec、Agent Prompt 或模型回答。非交互环境继续使用普通逐行输入且不会写入
-清屏控制序列。
+`/done`、`到此为止`、`先到这里`、`停止澄清` 等完整结束表达会让下一轮只总结已知信息。
+Runtime 不向模型开放工具，也会拒绝异常返回的工具调用；用户在澄清界面输入结束语后，同批
+后续工具同样被拒绝。总结后可继续输入新需求。管道模式兼容 `q`、`exit` 和空输入退出。
 
-当用户要求导出，或 Agent 判断 Spec 已具备评审条件时，文件会写入：
+## 功能与兼容边界
+
+- 保留列目录、搜索、按行读取、澄清、读取 Spec、原子 Patch、校验和导出八个工具；
+- Spec 保留目标、范围、需求、决策、假设、未决问题、验收条件和证据；Zod 严格校验输入及引用；
+- Spec 采用乐观版本校验和整批 Patch 提交，非法修改不影响旧状态；
+- 每个 Session 独占历史与 Spec，重启恢复上次活动项；未完成轮次标记中断并且不自动重放；
+- 文件路径在解析符号链接后复验工作区边界，状态文件采用同目录临时文件加原子替换；
+- 语言切换只改变当前进程的 UI 文案，不翻译历史、Spec、系统提示或模型回答。
+
+原 Python `schema_version=1` 的 Session / Spec JSON、ID、版本历史及目录格式继续兼容：
 
 ```text
+.specpilot/sessions/index.json
+.specpilot/sessions/<session_id>/session.json
 .specpilot/specs/<spec_id>/spec.json
 .specpilot/specs/<spec_id>/SPEC.md
 ```
 
-结构化 Spec 会随 Session 自动持久化；显式导出仍用于生成便于评审的 JSON 和 Markdown 视图。
+Python CLI、`code.py`、pip/uv 依赖与旧 Python 测试已移除；使用上面的 npm 命令启动。
+`.env` 现在从**启动工作区**读取，npm 安装位置不作为配置根目录。
 
-## 工程检查
+MVP 仍只支持单进程写入和完整轮次之间恢复；不支持工具执行中 checkpoint、跨 worktree
+共享或安全中断正在执行的模型/工具调用。运行时 UI 会明确拒绝强制退出操作。
+Skill Loader、Context Compaction、MCP 和 Permission HITL 尚未实现。
+
+## 工程验证
 
 ```powershell
-uv run ruff format --check .
-uv run ruff check .
-uv run mypy
-uv run pytest
+npm run build
+npm run typecheck
+npm run lint
+npm run tests
+npm run smoke:package
 ```
 
-默认测试不调用真实模型；需要真实 API 的付费 Eval 必须通过单独开关启用。
+`lint` 同时检查 Biome 格式和静态规则，`npm run format` 自动格式化。默认测试不联网，覆盖
+状态、工具、Anthropic 模拟协议、Python JSON 迁移、六个原有场景的受控执行轨迹和 Ink 按键。
+这些脚本化轨迹验证运行时契约，不能替代真实模型的概率性评估。
 
-## 项目结构
+原付费 Eval 仍通过 `SPECPILOT_RUN_LIVE_EVALS=1` 单独启用，默认跳过。CI 在 Windows 和
+Linux 的 Node 22 上执行所有确定性检查和打包检查。
 
 ```text
-specpilot/
-├── cli.py             # 命令行入口
-├── runtime/           # Agent Loop、Session、Hook 和模型接口
-├── tooling/           # 通用工具契约、注册与执行机制
-├── capabilities/      # 仓库调查、需求澄清和 Spec 能力
-├── integrations/      # Anthropic、本地文件系统等外部适配器
-└── evaluation/        # Eval 数据模型与评分
+src/
+├── cli.tsx / config.ts / bootstrap.ts  # 入口、配置与组合根
+├── runtime/                           # Agent Loop、Hook、Session 和模型端口
+├── tooling/                           # 工具契约、注册、校验与统一执行
+├── capabilities/                      # 仓库调查、澄清和 Spec
+├── integrations/                      # Anthropic、文件系统和 Ink / console
+└── evaluation/                        # Eval 契约与评分
+tests-ts/                              # 离线回归和兼容样本
 ```
 
-工程约定与扩展方式请参阅 [工程手册](docs/engineering/README.md)，产品范围请参阅
-[CLI MVP 产品需求文档](docs/product/mvp-prd.md)。Skill Loader、上下文压缩、MCP Tool Calling
-和 Permission HITL 尚未实现。
+工程约定见 [工程手册](docs/engineering/README.md)，迁移验收记录见
+[TypeScript 迁移计划](docs/plans/261008-TypeScript迁移.md)。

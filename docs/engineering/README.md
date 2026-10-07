@@ -6,7 +6,7 @@
 与 Agent 生产实践结合，目标是让后来者可以安全地修改代码、复现实验并解释系统行为。
 
 Agent 领域目前没有一份等同于企业 Java 开发手册的统一标准。因此本手册采用多来源
-组合：Python 官方规范负责代码质量；Anthropic 与 OpenAI 的生产指南负责 Agent 设计；
+组合：TypeScript、Node.js 与 Zod 规范负责代码质量和边界；Anthropic 与 OpenAI 的生产指南负责 Agent 设计；
 MCP 规范负责互操作边界；OWASP 与 NIST 负责安全和风险；项目自身规则负责 Spec/HITL。
 
 ## 规范等级
@@ -23,7 +23,7 @@ MCP 规范负责互操作边界；OWASP 与 NIST 负责安全和风险；项目�
 ## 手册目录
 
 - [架构规范](architecture.md)
-- [Python 规范](python.md)
+- [TypeScript 规范](typescript.md)（[历史 Python 入口](python.md)）
 - [Agent Runtime](agent-runtime.md)
 - [Tools 与 MCP](tools-and-mcp.md)
 - [安全与 HITL](security-and-hitl.md)
@@ -45,7 +45,7 @@ MCP 规范负责互操作边界；OWASP 与 NIST 负责安全和风险；项目�
 ## 维护方式
 
 - 每条新强制规则必须对应明确风险、故障案例或权威来源。
-- 能由 Ruff、类型检查、测试或 CI 自动执行的规则，应落到工具配置，而非只写在文档中。
+- 能由 Biome、TypeScript、Vitest 或 CI 自动执行的规则，应落到工具配置，而非只写在文档中。
 - 修改安全边界、Spec 状态模型或公开工具契约时，必须同步更新手册和测试。
 - 至少在重大版本发布前复查外部标准链接及 MCP 协议版本。
 
@@ -58,6 +58,6 @@ MCP 规范负责互操作边界；OWASP 与 NIST 负责安全和风险；项目�
 - [Model Context Protocol specification](https://modelcontextprotocol.io/specification/2025-11-25)
 - [OWASP LLM01: Prompt Injection](https://genai.owasp.org/llmrisk/llm01-prompt-injection/)
 - [NIST AI RMF: Generative AI Profile](https://www.nist.gov/publications/artificial-intelligence-risk-management-framework-generative-artificial-intelligence)
-- [PEP 8](https://peps.python.org/pep-0008/)
-- [Python Packaging User Guide](https://packaging.python.org/en/latest/tutorials/packaging-projects/)
-- [pytest Good Integration Practices](https://docs.pytest.org/en/stable/explanation/goodpractices.html)
+- [TypeScript Handbook](https://www.typescriptlang.org/docs/handbook/intro.html)
+- [npm package.json](https://docs.npmjs.com/cli/configuring-npm/package-json)
+- [Vitest](https://vitest.dev/guide/)

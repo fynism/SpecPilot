@@ -31,18 +31,18 @@ Adapters: Anthropic、Filesystem、MCP、SQLite、Web
 
 - 一个模块围绕一个稳定概念，而不是机械地“一类一文件”。
 - 公共接口必须小于内部实现；默认保持符号私有，仅导出真实稳定的 API。
-- 跨层调用优先使用 `Protocol` 或小接口，不建立双向导入。
+- 跨层调用优先使用小型 TypeScript interface，不建立双向导入。
 - 依赖在组合根统一装配；业务模块不得创建难以替换的全局网络客户端。
-- 数据模型与 I/O 分开；Pydantic 主要用于系统边界和持久化契约。
+- 数据模型与 I/O 分开；Zod 主要用于系统边界和持久化契约。
 
-## Python 包组织
+## TypeScript 模块组织
 
 仓库采用“功能优先、机制与外部适配器显式分离”的模块化单体结构，不使用全局纯类型分层，
 也不把 MVC 强行套在 Agent Runtime 上。当前包的职责如下：
 
 ```text
-specpilot/
-├── cli.py、config.py          # 入口与配置
+src/
+├── cli.tsx、config.ts、bootstrap.ts # 入口、配置与组合根
 ├── runtime/                   # Agent Loop、Session、Hook、供应商无关模型接口
 │   └── session/               # 本地对话生命周期与持久化端口
 ├── tooling/                   # Tool 契约、Registry、Executor、默认工具目录
@@ -67,8 +67,8 @@ specpilot/
 5. 只有被多个能力真实复用且语义稳定的实现才提升为共享模块；不能以“将来可能复用”为由
    提前抽象。
 
-顶层按功能和运行角色分类，功能模块内部再按 `models.py`、`store.py`、`operations.py`、
-`tool.py` 等实现职责拆分。小模块不必机械补齐全部文件；只有代码量或独立变化原因出现后才
+顶层按功能和运行角色分类，功能模块内部再按 `models.ts`、`store.ts`、`operations.ts`、
+`tool.ts` 等实现职责拆分。小模块不必机械补齐全部文件；只有代码量或独立变化原因出现后才
 拆分，禁止创建尚未实现的空目录和占位模块。
 
 ### 依赖方向
@@ -92,17 +92,16 @@ Evaluation    → 公开接口和受控测试数据
   组合根装配。
 - `runtime/` 不得依赖某个能力的内部实现来决定业务规则。
 - `integrations/` 可以依赖第三方库，领域模型和 Tool 契约不得反向依赖具体 SDK。
-- `tooling/catalog.py` 当前集中装配内置工具。CLI 在 Session 切换时通过
-  `runtime/agent.py` 的工厂创建独立运行时；当出现第二个前端或运行模式时，应提取
-  `bootstrap.py` 作为唯一组合根，而不是现在创建无实现的占位文件。
+- `tooling/catalog.ts` 集中装配内置工具；`bootstrap.ts` 是 Ink 与 console 两个前端共用的组合根。
+  Session 切换后创建独立运行时，网络客户端只在装配时创建。
 
 ### 新模块接入实践
 
 新增用户能力时：
 
 1. 在 `capabilities/<name>/` 中集中模型、操作和外部行为，优先保持一个较深的公开接口；
-2. Tool 输入继承 `tooling.contracts.ToolInput`，处理函数只实现该能力本身；
-3. 在 `tooling/catalog.py` 中完成默认注册，仍由统一 Executor、Policy 和 Hook 执行；
+2. Tool 输入使用 Zod `strictObject`，处理函数只实现该能力本身；
+3. 在 `tooling/catalog.ts` 中完成默认注册，仍由统一 Executor、Policy 和 Hook 执行；
 4. 添加能力单元测试、Tool 契约测试；若改变 Agent 选择路径，同时添加 Eval。
 
 新增 Agent 基础模块时：

@@ -53,7 +53,7 @@ feat: 增加结构化需求状态
 在工程配置完成后，默认要求：
 
 ```text
-format check → lint → type check → unit/contract tests → relevant agent evals
+npm run build → npm run typecheck → npm run lint → npm run tests → npm pack --dry-run
 ```
 
 - 失败门禁不得通过跳过、降阈值或删除测试解决，除非评审明确证明规则错误。
@@ -88,4 +88,4 @@ Prompt/Skill 版本和通过的测试/Eval 报告。
 
 - [Conventional Commits 1.0.0](https://www.conventionalcommits.org/en/v1.0.0/)
 - [Semantic Versioning 2.0.0](https://semver.org/)
-- [Python Packaging User Guide](https://packaging.python.org/en/latest/tutorials/packaging-projects/)
+- [npm package.json](https://docs.npmjs.com/cli/configuring-npm/package-json)

@@ -118,6 +118,38 @@ describe('Ink 澄清真实按键', () => {
 });
 
 describe('Ink Session、语言与对话', () => {
+  it('应用卸载唤醒待回答澄清，运行中的 Ctrl+Q 不能切换或退出', async () => {
+    const fixture = temporaryManager();
+    try {
+      const client = new ScriptedClient([
+        [call('q', 'request_clarification', clarification)],
+        [{ type: 'text', text: '取消后返回' }],
+      ]);
+      const screen = render(
+        <TerminalApp
+          manager={fixture.manager}
+          runtimeFactory={(presenter, emit) =>
+            buildSessionRuntime(fixture.manager, fixture.root, settings, presenter, emit, client)
+          }
+        />,
+      );
+      await frame(screen, '等待输入');
+      await type(screen, '需求');
+      screen.stdin.write('\r');
+      await frame(screen, '谁可以导出');
+      screen.stdin.write('\u0011');
+      await frame(screen, '不能安全中断');
+      expect(fixture.manager.current.status).toBe('running');
+      screen.unmount();
+      await vi.waitFor(() => expect(fixture.manager.current.status).toBe('waiting_for_user'));
+      const results = fixture.manager.messages.flatMap((m) =>
+        typeof m.content === 'string' ? [] : m.content.filter((b) => b.type === 'tool_result'),
+      );
+      expect(results[0] && JSON.parse(results[0].content).status).toBe('cancelled');
+    } finally {
+      fixture.cleanup();
+    }
+  });
   it('Session 选择器从活动项所在页打开，翻页与取消不写状态', async () => {
     const fixture = temporaryManager();
     try {
