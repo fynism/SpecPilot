@@ -1,0 +1,45 @@
+{
+  "name": "specpilot",
+  "version": "0.1.0",
+  "description": "面向软件项目的需求澄清与结构化 Specification CLI",
+  "type": "module",
+  "bin": {
+    "specpilot": "dist/cli.js"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    ".env.example"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit",
+    "lint": "biome check src tests-ts package.json biome.json tsconfig.json tsconfig.build.json vitest.config.ts",
+    "format": "biome check --write src tests-ts package.json biome.json tsconfig.json tsconfig.build.json vitest.config.ts",
+    "tests": "vitest run",
+    "test": "npm run tests",
+    "start": "node dist/cli.js",
+    "dev": "tsx src/cli.tsx",
+    "prepack": "npm run build"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "0.132.0",
+    "@inkjs/ui": "2.0.0",
+    "dotenv": "17.3.1",
+    "ink": "8.0.0",
+    "react": "19.3.0",
+    "zod": "4.6.5"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.4.8",
+    "@types/node": "^22.0.0",
+    "@types/react": "^19.3.0",
+    "ink-testing-library": "^4.0.0",
+    "tsx": "^4.20.0",
+    "typescript": "^5.9.0",
+    "vitest": "3.2.4"
+  }
+}

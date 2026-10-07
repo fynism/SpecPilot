@@ -1,0 +1,70 @@
+{
+  "schema_version": 1,
+  "session_id": "SS-5819f4356d32",
+  "title": "Python 迁移样本",
+  "status": "waiting_for_user",
+  "active_request": null,
+  "messages": [
+    {
+      "role": "user",
+      "content": "原有用户需求"
+    },
+    {
+      "role": "assistant",
+      "content": [
+        {
+          "type": "text",
+          "text": "原有回答"
+        }
+      ]
+    }
+  ],
+  "spec_id": "SP-8f9bbb32d33c",
+  "spec_versions": [
+    {
+      "schema_version": 1,
+      "spec_id": "SP-8f9bbb32d33c",
+      "version": 1,
+      "status": "draft",
+      "title": "Python 迁移样本",
+      "created_at": "2026-10-07T19:27:09.479483Z",
+      "updated_at": "2026-10-07T19:27:09.479483Z",
+      "change_reason": "创建初始 Spec",
+      "goals": [],
+      "scope": [],
+      "requirements": [],
+      "decisions": [],
+      "assumptions": [],
+      "open_questions": [],
+      "acceptance_criteria": [],
+      "evidence": []
+    },
+    {
+      "schema_version": 1,
+      "spec_id": "SP-8f9bbb32d33c",
+      "version": 2,
+      "status": "draft",
+      "title": "Python 迁移样本",
+      "created_at": "2026-10-07T19:27:09.479483Z",
+      "updated_at": "2026-10-07T19:27:09.479832Z",
+      "change_reason": "迁移兼容性样本",
+      "goals": [
+        {
+          "id": "G-001",
+          "statement": "保存现有行为",
+          "evidence_ids": [],
+          "lifecycle": "active"
+        }
+      ],
+      "scope": [],
+      "requirements": [],
+      "decisions": [],
+      "assumptions": [],
+      "open_questions": [],
+      "acceptance_criteria": [],
+      "evidence": []
+    }
+  ],
+  "created_at": "2026-10-07T19:27:09.479483Z",
+  "updated_at": "2026-10-07T19:27:09.479483Z"
+}

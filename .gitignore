@@ -18,3 +18,8 @@ dist/
 docs/product/
 docs/ideas/
 .zread/
+
+# Node.js 构建和依赖
+node_modules/
+coverage/
+*.tgz
