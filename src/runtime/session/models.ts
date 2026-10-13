@@ -8,11 +8,12 @@ import {
 } from '../../capabilities/spec/models.js';
 import { contextStateSchema, safeContextCuts } from '../context/index.js';
 import { messageSchema } from '../model.js';
+import { emptyTokenLedger, tokenLedgerSchema } from '../usage.js';
 
 export const sessionIdSchema = z.string().regex(/^SS-[0-9a-f]{12}$/);
 const currentSessionSchema = z
   .strictObject({
-    schema_version: z.literal(2).default(2),
+    schema_version: z.literal(3).default(3),
     session_id: sessionIdSchema,
     title: z
       .string()
@@ -25,6 +26,7 @@ const currentSessionSchema = z
     active_request: z.string().nullable().default(null),
     messages: z.array(messageSchema).default([]),
     context: contextStateSchema.default(() => contextStateSchema.parse({})),
+    token_usage: tokenLedgerSchema,
     spec_id: z.string(),
     spec_versions: z.array(specificationSchema).min(1),
     created_at: timestamp,
@@ -62,16 +64,23 @@ const currentSessionSchema = z
     )
       fail('Session Spec 身份及连续版本必须一致');
   });
-/** v1 按需向前迁移；原始消息和 Spec 不变，重复读取 v2 不重复迁移。 */
+/** v1/v2 按需向前迁移；历史实际消耗不可重建，明确标记缺失。 */
 export const sessionSchema = z.preprocess((input) => {
   if (
     typeof input === 'object' &&
     input !== null &&
     'schema_version' in input &&
-    input.schema_version === 1 &&
-    !('context' in input)
+    ((input.schema_version === 1 && !('context' in input)) || input.schema_version === 2) &&
+    !('token_usage' in input)
   )
-    return { ...input, schema_version: 2, context: contextStateSchema.parse({}) };
+    return {
+      ...input,
+      schema_version: 3,
+      ...(!('context' in input) ? { context: contextStateSchema.parse({}) } : {}),
+      token_usage: emptyTokenLedger(
+        'messages' in input && Array.isArray(input.messages) && input.messages.length > 0,
+      ),
+    };
   return input;
 }, currentSessionSchema);
 export type SessionRecord = z.infer<typeof sessionSchema>;
@@ -86,6 +95,7 @@ export function createSessionRecord(
   return sessionSchema.parse({
     session_id: sessionId,
     title: title.trim(),
+    token_usage: emptyTokenLedger(),
     spec_id: spec.spec_id,
     spec_versions: [spec],
     created_at: now,

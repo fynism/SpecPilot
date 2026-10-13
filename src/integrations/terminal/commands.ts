@@ -1,4 +1,5 @@
 import type { SessionManager } from '../../runtime/session/manager.js';
+import { tokenConsumptionText } from './text.js';
 
 export const commands = [
   '/new',
@@ -15,7 +16,8 @@ export type CommandResult = 'not_command' | 'handled' | 'session_changed' | 'qui
 export function statusText(manager: SessionManager): string {
   const session = manager.current;
   const spec = manager.currentSpec();
-  return `当前 Session：${session.session_id} · ${session.title} · ${session.status}\n当前 Spec：${spec.spec_id} · v${spec.version} · ${spec.status}`;
+  const ledger = session.token_usage;
+  return `当前 Session：${session.session_id} · ${session.title} · ${session.status}\n当前 Spec：${spec.spec_id} · v${spec.version} · ${spec.status}\n${tokenConsumptionText(ledger, 'zh-CN')}\n本次已统计输入 ${ledger.current_turn.input_tokens} / 输出 ${ledger.current_turn.output_tokens}；累计已统计输入 ${ledger.total.input_tokens} / 输出 ${ledger.total.output_tokens}`;
 }
 /** 只处理轮次间命令；没有参数的选择交互由前端提供。 */
 export function handleSessionCommand(

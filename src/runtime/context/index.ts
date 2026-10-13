@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { z } from 'zod';
 import type { ToolSpec } from '../../tooling/contracts.js';
 import { ContextLimitError, type Message, type ModelClient, modelBlockSchema } from '../model.js';
@@ -23,6 +24,8 @@ export const contextStateSchema = z.strictObject({
         strategy: z.literal('model-summary-v1'),
         before_tokens: z.number().int().nonnegative(),
         after_tokens: z.number().int().nonnegative(),
+        before_source: z.enum(['provider', 'estimate']).default('estimate'),
+        after_source: z.enum(['provider', 'estimate']).default('estimate'),
         created_at: z.iso.datetime({ offset: true }),
         lossy: z.literal(true),
       }),
@@ -34,6 +37,28 @@ export interface ContextUsage {
   usedTokens: number;
   window: number;
   percentage: number;
+  source: 'provider' | 'estimate' | 'pending';
+}
+export interface ContextMeasurement {
+  key: string;
+  usage: ContextUsage;
+}
+
+/** 请求参数变化后旧计数立即失效，不把累计消耗或摘要调用用量当作当前窗口。 */
+export function contextRequestKey(messages: Message[], tools: ToolSpec[], system: string): string {
+  return createHash('sha256')
+    .update(
+      JSON.stringify({
+        messages,
+        system,
+        tools: tools.map((tool) => ({
+          name: tool.name,
+          description: tool.description,
+          schema: z.toJSONSchema(tool.inputSchema, { io: 'input', target: 'draft-07' }),
+        })),
+      }),
+    )
+    .digest('hex');
 }
 
 /** 保守的 UTF-8 字节估算，包含协议开销；不是供应商 tokenizer 的精确计费值。 */
@@ -54,7 +79,7 @@ export function estimateContextUsage(
     input_schema: z.toJSONSchema(tool.inputSchema, { io: 'input', target: 'draft-07' }),
   }));
   const usedTokens = tokens(messages) + tokens(system) + tokens(declarations);
-  return { usedTokens, window, percentage: (usedTokens / window) * 100 };
+  return { usedTokens, window, percentage: (usedTokens / window) * 100, source: 'estimate' };
 }
 
 /** 只允许在工具调用全部配对后裁剪，不能留下孤立 tool_result。 */
@@ -110,17 +135,50 @@ export function buildContextMessages(
 
 /** 生命周期机制：确定性触发与原子替换，模型只负责历史摘要。 */
 export class ContextManager {
+  private measurement?: ContextMeasurement;
   constructor(
     private readonly client: ModelClient,
     private readonly state: {
       read(): ContextState;
       write(state: ContextState): void;
       spec(): unknown;
+      measured?(measurement: ContextMeasurement): void;
     },
     private readonly emit: (text: string) => void,
     private readonly model = 'unknown',
     private readonly window = CONTEXT_WINDOW,
   ) {}
+
+  private async count(
+    messages: Message[],
+    tools: ToolSpec[],
+    system: string,
+  ): Promise<ContextUsage> {
+    const count = (await this.client.countTokens?.(messages, tools, system)) ?? null;
+    if (count === null) return estimateContextUsage(messages, tools, system, this.window);
+    z.number().int().nonnegative().safe().parse(count);
+    return {
+      usedTokens: count,
+      window: this.window,
+      percentage: (count / this.window) * 100,
+      source: 'provider',
+    };
+  }
+
+  async refresh(messages: Message[], tools: ToolSpec[], system: string): Promise<ContextUsage> {
+    const input = buildContextMessages(messages, this.state.read(), this.state.spec());
+    const key = contextRequestKey(input, tools, system);
+    if (this.measurement?.key === key) return this.measurement.usage;
+    const usage = await this.count(input, tools, system);
+    this.measurement = { key, usage };
+    this.state.measured?.(this.measurement);
+    this.emit(
+      usage.source === 'provider'
+        ? '上下文 Token 计数已更新。'
+        : '供应商未支持计数，当前上下文用量为估算值。',
+    );
+    return usage;
+  }
 
   usage(messages: Message[], tools: ToolSpec[], system: string): ContextUsage {
     return estimateContextUsage(
@@ -132,10 +190,12 @@ export class ContextManager {
   }
 
   async prepare(messages: Message[], tools: ToolSpec[], system: string): Promise<Message[]> {
-    if (this.usage(messages, tools, system).usedTokens + RESPONSE_TOKENS >= this.window) {
+    let usage = await this.refresh(messages, tools, system);
+    if (usage.usedTokens + RESPONSE_TOKENS >= this.window) {
       await this.compact(messages, tools, system, 'automatic');
+      usage = await this.refresh(messages, tools, system);
     }
-    if (this.usage(messages, tools, system).usedTokens + RESPONSE_TOKENS >= this.window)
+    if (usage.usedTokens + RESPONSE_TOKENS >= this.window)
       throw new ContextLimitError('压缩后仍超出上下文窗口，请缩短当前请求或新建 Session。');
     return buildContextMessages(messages, this.state.read(), this.state.spec());
   }
@@ -147,7 +207,6 @@ export class ContextManager {
     reason: ContextState['compactions'][number]['reason'] = 'manual',
   ): Promise<boolean> {
     const previous = this.state.read();
-    const before = this.usage(messages, tools, system).usedTokens;
     const cuts = safeContextCuts(messages).filter((cut) => cut > previous.through);
     // 平时保留至少四条近期消息；窗口不足时只保留最后一个完整协议组。
     const cut =
@@ -161,19 +220,30 @@ export class ContextManager {
       }
       throw new ContextLimitError('没有可压缩的完整历史，请缩短当前请求或新建 Session。');
     }
+    const beforeUsage = await this.refresh(messages, tools, system);
+    const before = beforeUsage.usedTokens;
     this.emit('正在压缩上下文…');
     let summary = previous.summary;
     // 大历史分批输入摘要模型；工具协议序列化成数据，因此不会执行或产生孤立调用。
     let batch: { index: number; message: Message }[] = [];
-    const summaryRequest = () => [
+    const summaryRequest = (entries = batch) => [
       {
         role: 'user' as const,
-        content: JSON.stringify({ previous_summary: summary, messages: batch }),
+        content: JSON.stringify({ previous_summary: summary, messages: entries }),
       },
     ];
-    const summarize = async () => {
+    const summarizeBatch = async (entries: typeof batch): Promise<void> => {
+      const input = summaryRequest(entries);
+      const usage = await this.count(input, [], SUMMARY_SYSTEM);
+      if (usage.usedTokens + SUMMARY_TOKENS >= this.window) {
+        if (entries.length <= 1) throw new ContextLimitError('单条历史消息过大，无法安全压缩。');
+        const middle = Math.ceil(entries.length / 2);
+        await summarizeBatch(entries.slice(0, middle));
+        await summarizeBatch(entries.slice(middle));
+        return;
+      }
       const blocks = (
-        await this.client.createMessage(summaryRequest(), [], SUMMARY_SYSTEM, SUMMARY_TOKENS)
+        await this.client.createMessage(input, [], SUMMARY_SYSTEM, SUMMARY_TOKENS)
       ).map((b) => modelBlockSchema.parse(b));
       if (blocks.some((b) => b.type !== 'text')) throw new Error('压缩模型返回了工具调用');
       const text = blocks
@@ -183,6 +253,9 @@ export class ContextManager {
         .trim();
       if (!text || text.length > 32_000) throw new Error('压缩摘要为空或超出上限');
       summary = text;
+    };
+    const summarize = async () => {
+      await summarizeBatch(batch);
       batch = [];
     };
     const budget = Math.min(this.window - SUMMARY_TOKENS, Math.floor(this.window * 0.8));
@@ -200,18 +273,21 @@ export class ContextManager {
         if (
           estimateContextUsage(summaryRequest(), [], SUMMARY_SYSTEM, this.window).usedTokens >=
           budget
-        )
-          throw new ContextLimitError('单条历史消息过大，无法安全压缩。');
+        ) {
+          const usage = await this.count(summaryRequest(), [], SUMMARY_SYSTEM);
+          if (usage.usedTokens + SUMMARY_TOKENS >= this.window)
+            throw new ContextLimitError('单条历史消息过大，无法安全压缩。');
+        }
       }
     }
     if (batch.length) await summarize();
     const next = { ...previous, summary, through: cut };
-    const after = estimateContextUsage(
+    const afterUsage = await this.count(
       buildContextMessages(messages, next, this.state.spec()),
       tools,
       system,
-      this.window,
-    ).usedTokens;
+    );
+    const after = afterUsage.usedTokens;
     if (after >= before) {
       if (reason !== 'manual') throw new ContextLimitError('摘要未降低上下文用量。');
       this.emit('历史较短，摘要未降低用量，已保留原上下文。');
@@ -226,13 +302,20 @@ export class ContextManager {
         strategy: 'model-summary-v1',
         before_tokens: before,
         after_tokens: after,
+        before_source: beforeUsage.source === 'provider' ? 'provider' : 'estimate',
+        after_source: afterUsage.source === 'provider' ? 'provider' : 'estimate',
         created_at: new Date().toISOString(),
         lossy: true,
       },
     ];
     // 所有摘要成功并确认有收益后才替换；失败保持原历史与旧摘要。
     this.state.write(contextStateSchema.parse(next));
-    this.emit(`上下文已压缩：约 ${before} → ${after} tokens；原始历史已保留。`);
+    const input = buildContextMessages(messages, next, this.state.spec());
+    this.measurement = { key: contextRequestKey(input, tools, system), usage: afterUsage };
+    this.state.measured?.(this.measurement);
+    this.emit(
+      `上下文已压缩：${before} → ${after} tokens（${afterUsage.source === 'provider' ? '供应商计数' : '估算'}）；原始历史已保留。`,
+    );
     return true;
   }
 }

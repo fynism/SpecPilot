@@ -33,6 +33,11 @@ export class ContextLimitError extends Error {
   override name = 'ContextLimitError';
 }
 
+/** 可向用户展示的安全计数错误，不包含供应商正文。 */
+export class TokenCountError extends Error {
+  override name = 'TokenCountError';
+}
+
 /** 供应商无关的异步模型端口，SDK 类型仅停留在适配层。 */
 export interface ModelClient {
   /** 最近一次模型生成的供应商用量；缺失为 null，失败前必须清空旧值。 */

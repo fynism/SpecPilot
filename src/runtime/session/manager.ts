@@ -1,8 +1,13 @@
 import { type Clock, newId, type Specification, utcNow } from '../../capabilities/spec/models.js';
 import { SpecToolService } from '../../capabilities/spec/operations.js';
 import { InMemorySpecStore } from '../../capabilities/spec/store.js';
-import { type ContextState, contextStateSchema } from '../context/index.js';
-import type { Message } from '../model.js';
+import {
+  type ContextMeasurement,
+  type ContextState,
+  contextStateSchema,
+} from '../context/index.js';
+import type { Message, TokenUsage } from '../model.js';
+import { addTokenUsage, emptyTokenLedger } from '../usage.js';
 import { createSessionRecord, type SessionRecord } from './models.js';
 import type { SessionStore } from './store.js';
 
@@ -10,6 +15,7 @@ import type { SessionStore } from './store.js';
 export class SessionManager {
   private record?: SessionRecord;
   private specStore?: InMemorySpecStore;
+  private readonly measurements = new Map<string, ContextMeasurement>();
   constructor(
     private readonly store: SessionStore,
     private readonly clock: Clock = utcNow,
@@ -28,6 +34,28 @@ export class SessionManager {
   }
   get context(): ContextState {
     return structuredClone(this.require().record.context);
+  }
+  get contextMeasurement(): ContextMeasurement | undefined {
+    return this.measurements.get(this.require().record.session_id);
+  }
+  measureContext(value: ContextMeasurement): void {
+    this.measurements.set(this.require().record.session_id, value);
+  }
+  /** 用量先写稳定快照，不把未配对调用或未提交 Spec 当成恢复点。消耗不能随失败回滚。 */
+  recordTokenUsage(usage: TokenUsage | null): void {
+    const { record } = this.require();
+    const ledger = addTokenUsage(record.token_usage, usage);
+    // 供应商已报告的消耗是已发生的事实；磁盘写入失败也不能从内存中丢弃。
+    this.record = { ...record, token_usage: ledger };
+    const stable = this.store.load(record.session_id);
+    this.store.save({ ...stable, token_usage: ledger, updated_at: this.clock() });
+  }
+  beginUsageTurn(): void {
+    this.persist({
+      ...this.current,
+      token_usage: { ...this.current.token_usage, current_turn: emptyTokenLedger().current_turn },
+      updated_at: this.clock(),
+    });
   }
   /** 运行中随完整轮次保存；手动压缩在轮次间原子提交，不更改生命周期。 */
   updateContext(context: ContextState): void {
@@ -102,6 +130,7 @@ export class SessionManager {
       status: 'running',
       active_request: request,
       messages: [...session.messages, { role: 'user', content: request }],
+      token_usage: { ...session.token_usage, current_turn: emptyTokenLedger().current_turn },
       updated_at: this.clock(),
     });
   }
@@ -119,7 +148,12 @@ export class SessionManager {
     if (record.status !== 'running') return;
     // 从磁盘恢复 beginTurn 的稳定快照，丢弃未提交 Spec 与不完整工具协议。
     const stable = this.store.load(record.session_id);
-    const interrupted = { ...stable, status: 'interrupted' as const, updated_at: this.clock() };
+    const interrupted = {
+      ...stable,
+      token_usage: record.token_usage,
+      status: 'interrupted' as const,
+      updated_at: this.clock(),
+    };
     this.store.save(interrupted);
     this.activate(interrupted);
   }

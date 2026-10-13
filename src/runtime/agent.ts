@@ -78,6 +78,7 @@ export class AgentRuntime {
           messages.push({ role: 'user', content: force });
           continue;
         }
+        await this.context.refresh(messages, this.registry.toolSpecs(), SYSTEM);
         return 'model_complete';
       }
       const results: Exclude<Message['content'], string> = [];
@@ -97,7 +98,10 @@ export class AgentRuntime {
       if (stopRequested) toolsEnabled = false;
       toolTurns++;
       // 同批并行调用算一轮，先保留全部配对结果再暂停；结束回答优先进入最后总结。
-      if (toolTurns >= this.maxToolUseTurns && !stopRequested) return 'max_tool_use_turns';
+      if (toolTurns >= this.maxToolUseTurns && !stopRequested) {
+        await this.context.refresh(messages, this.registry.toolSpecs(), SYSTEM);
+        return 'max_tool_use_turns';
+      }
     }
   }
 }

@@ -13,7 +13,7 @@ import {
   type ContextUsage,
   estimateContextUsage,
 } from '../../runtime/context/index.js';
-import { ContextLimitError } from '../../runtime/model.js';
+import { ContextLimitError, TokenCountError } from '../../runtime/model.js';
 import { SYSTEM } from '../../runtime/prompts.js';
 import type { SessionManager } from '../../runtime/session/manager.js';
 import { compactSession, runSessionTurn } from '../../runtime/turn.js';
@@ -21,7 +21,12 @@ import { commands, handleSessionCommand } from './commands.js';
 import { type Locale, resolveLocale, type TextKey, translate } from './i18n.js';
 import { InputLine } from './input.js';
 import { ClarificationOverlay, LanguageOverlay, SessionOverlay } from './overlays.js';
-import { readableTranscript, safeTerminalText } from './text.js';
+import {
+  contextUsageText,
+  readableTranscript,
+  safeTerminalText,
+  tokenConsumptionText,
+} from './text.js';
 
 export type RuntimeFactory = (
   presenter: ClarificationPresenter,
@@ -150,7 +155,7 @@ export function TerminalApp({
         setNotice(
           t(compacting ? 'status.compaction_failure' : 'status.failure', {
             error:
-              error instanceof ContextLimitError
+              error instanceof ContextLimitError || error instanceof TokenCountError
                 ? error.message
                 : error instanceof Error
                   ? error.name
@@ -187,7 +192,7 @@ export function TerminalApp({
       return wrapped;
     });
   });
-  const viewHeight = Math.max(3, dimensions.rows - 11);
+  const viewHeight = Math.max(3, dimensions.rows - 12);
   const start = Math.min(
     offset ?? Math.max(0, lines.length - viewHeight),
     Math.max(0, lines.length - viewHeight),
@@ -308,11 +313,10 @@ export function TerminalApp({
         ) : null}
         {busy ? <Spinner label={t(status)} /> : <Text color="cyan">{t(status)}</Text>}
         <Text dimColor wrap="truncate-end">
-          {t('context.usage', {
-            used: usage.usedTokens.toLocaleString(locale),
-            window: usage.window.toLocaleString(locale),
-            percentage: usage.percentage.toFixed(1),
-          })}
+          {contextUsageText(usage, locale)}
+        </Text>
+        <Text dimColor wrap="truncate-end">
+          {tokenConsumptionText(session.token_usage, locale)}
         </Text>
         {!busy && !overlay ? (
           <>

@@ -333,6 +333,8 @@ describe('上下文压缩确定性边界与离线场景 Eval', () => {
             strategy: 'model-summary-v1',
             before_tokens: 1000,
             after_tokens: 500,
+            before_source: 'estimate',
+            after_source: 'estimate',
             created_at: new Date().toISOString(),
             lossy: true,
           },

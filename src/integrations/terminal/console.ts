@@ -10,13 +10,18 @@ import {
   type ContextUsage,
   estimateContextUsage,
 } from '../../runtime/context/index.js';
-import { ContextLimitError } from '../../runtime/model.js';
+import { ContextLimitError, TokenCountError } from '../../runtime/model.js';
 import { SYSTEM } from '../../runtime/prompts.js';
 import type { SessionManager } from '../../runtime/session/manager.js';
 import { compactSession, runSessionTurn } from '../../runtime/turn.js';
 import type { RuntimeFactory } from './app.js';
 import { handleSessionCommand, statusText } from './commands.js';
-import { readableTranscript, safeTerminalText } from './text.js';
+import {
+  contextUsageText,
+  readableTranscript,
+  safeTerminalText,
+  tokenConsumptionText,
+} from './text.js';
 
 /** 一个共享逐行队列同时供命令与澄清消费，预先管道化的输入不会丢失。 */
 export class ConsoleInput {
@@ -110,9 +115,8 @@ export async function runConsole(
           [],
           SYSTEM,
         );
-      emit(
-        `上下文（估算）：${usage.usedTokens.toLocaleString('zh-CN')} / ${usage.window.toLocaleString('zh-CN')} tokens · ${usage.percentage.toFixed(1)}%`,
-      );
+      emit(contextUsageText(usage, 'zh-CN'));
+      emit(tokenConsumptionText(manager.current.token_usage, 'zh-CN'));
       emit('SpecPilot >>');
       const query = await input.read();
       if (query === null || ['q', 'exit', ''].includes(query.trim().toLowerCase())) return;
@@ -168,7 +172,7 @@ export async function runConsole(
           for (const entry of readableTranscript([last])) emit(entry.text);
       } catch (error) {
         const failure =
-          error instanceof ContextLimitError
+          error instanceof ContextLimitError || error instanceof TokenCountError
             ? error.message
             : error instanceof Error
               ? error.name

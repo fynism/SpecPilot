@@ -99,7 +99,7 @@ try {
     ),
   );
   assert.equal(session.title, 'npm会话');
-  assert.equal(session.schema_version, 2);
+  assert.equal(session.schema_version, 3);
   assert.deepEqual(session.context, { summary: '', through: 0, compactions: [] });
   console.log('npm 分发验收通过：本地 tarball、仅生产依赖、CLI shim、帮助/版本、管道 Session。');
 } finally {

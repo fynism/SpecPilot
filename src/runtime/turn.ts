@@ -8,6 +8,7 @@ export async function compactSession(
   runtime: AgentRuntime,
 ): Promise<boolean> {
   if (manager.current.status === 'running') throw new Error('Agent 运行中不能手动压缩上下文');
+  manager.beginUsageTurn();
   return runtime.compact(manager.messages);
 }
 

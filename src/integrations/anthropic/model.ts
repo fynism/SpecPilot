@@ -8,6 +8,7 @@ import {
   type ModelBlock,
   type ModelClient,
   modelBlockSchema,
+  TokenCountError,
   type TokenUsage,
   tokenUsageSchema,
 } from '../../runtime/model.js';
@@ -75,7 +76,9 @@ export class AnthropicModelClient implements ModelClient {
         this.countingUnsupported = true;
         return null;
       }
-      throw new Error('供应商 Token 计数失败', { cause: error });
+      throw new TokenCountError('供应商 Token 计数失败，请检查服务连接或稍后重试。', {
+        cause: error,
+      });
     }
   }
   async createMessage(

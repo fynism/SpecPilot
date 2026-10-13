@@ -19,6 +19,8 @@ afterEach(cleanup);
 type Screen = ReturnType<typeof render>;
 async function frame(screen: Screen, text: string): Promise<void> {
   await vi.waitFor(() => expect(screen.lastFrame()).toContain(text));
+  // Ink 写出帧早于 useInput 的被动 effect；等待下一事件循环再发送按键。
+  await new Promise<void>((resolve) => setImmediate(resolve));
 }
 async function type(screen: Screen, value: string): Promise<void> {
   screen.stdin.write(value);
@@ -118,6 +120,51 @@ describe('Ink 澄清真实按键', () => {
 });
 
 describe('Ink Session、语言与对话', () => {
+  it('显示供应商上下文计数与 API 实际消耗，本次及累计独立计算', async () => {
+    const fixture = temporaryManager();
+    try {
+      let request = 0;
+      let usage = { input_tokens: 0, output_tokens: 0 };
+      const client = {
+        get lastUsage() {
+          return usage;
+        },
+        countTokens: async () => 5000,
+        createMessage: async () => {
+          usage =
+            ++request === 1
+              ? { input_tokens: 4000, output_tokens: 200 }
+              : { input_tokens: 4500, output_tokens: 300 };
+          return [{ type: 'text' as const, text: `实际用量回答${request}` }];
+        },
+      };
+      const screen = render(
+        <TerminalApp
+          manager={fixture.manager}
+          getUsage={buildContextUsageReader(fixture.manager, fixture.root)}
+          runtimeFactory={(presenter, emit) =>
+            buildSessionRuntime(fixture.manager, fixture.root, settings, presenter, emit, client)
+          }
+        />,
+      );
+      await frame(screen, '上下文：待计数');
+      await type(screen, '第一次请求');
+      screen.stdin.write('\r');
+      await frame(screen, '实际用量回答1');
+      await frame(screen, '上下文（供应商计数）：5,000 / 500,000 tokens · 1.0%');
+      await frame(screen, '消耗（API）：本次 4,200 · 累计 4,200 tokens');
+      await type(screen, '第二次请求');
+      screen.stdin.write('\r');
+      await frame(screen, '实际用量回答2');
+      await frame(screen, '消耗（API）：本次 4,800 · 累计 9,000 tokens');
+      await type(screen, '/language en-US');
+      screen.stdin.write('\r');
+      await frame(screen, 'Context (provider count): 5,000 / 500,000 tokens · 1.0%');
+      await frame(screen, 'Usage (API): this turn 4,800 · total 9,000 tokens');
+    } finally {
+      fixture.cleanup();
+    }
+  });
   it('底部用量在工具运行期间实时更新，切换 Session 后重置', async () => {
     const fixture = temporaryManager();
     try {
@@ -143,7 +190,7 @@ describe('Ink Session、语言与对话', () => {
           }
         />,
       );
-      await frame(screen, `上下文（估算）：${initial.toLocaleString('zh-CN')} / 500,000 tokens`);
+      await frame(screen, '上下文：待计数 / 500,000 tokens');
       await type(screen, '开始工具调用');
       screen.stdin.write('\r');
       await vi.waitFor(() => expect(count).toBe(2));
@@ -159,7 +206,7 @@ describe('Ink Session、语言与对话', () => {
       await type(screen, '/new 空对话');
       screen.stdin.write('\r');
       await vi.waitFor(() => expect(fixture.manager.current.title).toBe('空对话'));
-      await frame(screen, `${initial.toLocaleString('zh-CN')} / 500,000 tokens`);
+      await frame(screen, '上下文：待计数 / 500,000 tokens');
     } finally {
       fixture.cleanup();
     }
@@ -261,7 +308,10 @@ describe('Ink Session、语言与对话', () => {
       await type(screen, '/compact');
       screen.stdin.write('\r');
       await frame(screen, '上下文压缩失败');
-      expect(fixture.manager.current).toEqual(original);
+      expect(fixture.manager.messages).toEqual(original.messages);
+      expect(fixture.manager.context).toEqual(original.context);
+      expect(fixture.manager.current.status).toBe(original.status);
+      expect(fixture.manager.current.token_usage.total.unreported_requests).toBe(1);
       expect(screen.lastFrame()).not.toContain('secret-token');
       expect(screen.lastFrame()).not.toContain('本轮已标记为中断');
     } finally {

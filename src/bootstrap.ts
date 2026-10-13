@@ -6,12 +6,14 @@ import { AgentRuntime } from './runtime/agent.js';
 import {
   buildContextMessages,
   ContextManager,
+  contextRequestKey,
   estimateContextUsage,
 } from './runtime/context/index.js';
 import { buildDefaultHooks } from './runtime/hooks.js';
 import type { ModelClient } from './runtime/model.js';
 import { SYSTEM } from './runtime/prompts.js';
 import type { SessionManager } from './runtime/session/manager.js';
+import { MeteredModelClient } from './runtime/usage.js';
 import { buildDefaultRegistry } from './tooling/catalog.js';
 import { ToolExecutor } from './tooling/executor.js';
 
@@ -28,12 +30,17 @@ export function buildContextUsageReader(manager: SessionManager, root: string) {
     () => undefined,
   );
   const tools = registry.toolSpecs();
-  return () =>
-    estimateContextUsage(
-      buildContextMessages(manager.messages, manager.context, manager.currentSpec()),
-      tools,
-      SYSTEM,
-    );
+  return () => {
+    const messages = buildContextMessages(manager.messages, manager.context, manager.currentSpec());
+    const measurement = manager.contextMeasurement;
+    if (measurement?.key === contextRequestKey(messages, tools, SYSTEM)) return measurement.usage;
+    const estimate = estimateContextUsage(messages, tools, SYSTEM);
+    return {
+      ...estimate,
+      source:
+        measurement?.usage.source === 'estimate' ? ('estimate' as const) : ('pending' as const),
+    };
+  };
 }
 
 /** 单一组合根供 Ink 与逐行前端共用，每次切换 Session 创建隔离运行时。 */
@@ -51,7 +58,10 @@ export function buildSessionRuntime(
     stop.observeAnswer(answer);
   });
   const registry = buildDefaultRegistry(root, manager.specTools, presenter, hooks.trigger);
-  const model = client ?? new AnthropicModelClient(settings);
+  const model = new MeteredModelClient(client ?? new AnthropicModelClient(settings), (usage) => {
+    manager.recordTokenUsage(usage);
+    emit(usage ? '模型实际 Token 消耗已更新。' : '供应商未返回本次调用用量，实际消耗统计不完整。');
+  });
   return new AgentRuntime(
     model,
     hooks,
@@ -66,6 +76,7 @@ export function buildSessionRuntime(
         read: () => manager.context,
         write: (state) => manager.updateContext(state),
         spec: () => manager.currentSpec(),
+        measured: (measurement) => manager.measureContext(measurement),
       },
       emit,
       settings.model,
