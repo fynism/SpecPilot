@@ -10,6 +10,7 @@ import { ClarificationCancelled } from '../../capabilities/clarification/tool.js
 import type { AgentRuntime } from '../../runtime/agent.js';
 import type { SessionManager } from '../../runtime/session/manager.js';
 import { runSessionTurn } from '../../runtime/turn.js';
+import { ClarificationBoard } from './clarification-board.js';
 import { commands, handleSessionCommand } from './commands.js';
 import { type Locale, resolveLocale, type TextKey, translate } from './i18n.js';
 import { InputLine } from './input.js';
@@ -48,7 +49,7 @@ export function TerminalApp({
   const busyRef = useRef(false);
   const [notice, setNotice] = useState('');
   const [status, setStatus] = useState<TextKey>('status.waiting');
-  const [overlay, setOverlay] = useState<'sessions' | 'language' | null>(null);
+  const [overlay, setOverlay] = useState<'sessions' | 'language' | 'clarify' | null>(null);
   const [question, setQuestion] = useState<PendingQuestion | null>(null);
   const pending = useRef<PendingQuestion | null>(null);
   const [epoch, setEpoch] = useState(0);
@@ -88,7 +89,12 @@ export function TerminalApp({
     if (mounted.current) setNotice(safeTerminalText(text));
   };
   const submit = async (query: string): Promise<void> => {
+    if (query.trim().toLowerCase() === '/clarify') {
+      setOverlay('clarify');
+      return;
+    }
     if (busyRef.current || !query.trim()) return;
+    if (query === '/done') setOverlay(null);
     setEpoch((e) => e + 1);
     setPrefix('');
     setHistory((h) => [...h, query]);
@@ -124,6 +130,7 @@ export function TerminalApp({
       setStatus('status.running');
       const reason = await runSessionTurn(manager, runtimeFactory(presenter, emit), query);
       if (mounted.current) {
+        if (reason === 'clarification_round_ready') setOverlay('clarify');
         setStatus(reason === 'max_tool_use_turns' ? 'status.tool_limit' : 'status.waiting');
         refresh((r) => r + 1);
       }
@@ -224,6 +231,19 @@ export function TerminalApp({
               setStatus('status.continuing');
               waiting?.resolve(answer);
             }}
+          />
+        ) : overlay === 'clarify' ? (
+          <ClarificationBoard
+            key={session.session_id}
+            manager={manager}
+            locale={locale}
+            busy={busy}
+            height={viewHeight}
+            onClose={() => setOverlay(null)}
+            onRun={(query) => {
+              void submit(query);
+            }}
+            onChange={() => refresh((r) => r + 1)}
           />
         ) : overlay === 'sessions' ? (
           <SessionOverlay

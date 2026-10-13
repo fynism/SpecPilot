@@ -6,6 +6,7 @@ export const commands = [
   '/switch',
   '/rename',
   '/status',
+  '/clarify',
   '/done',
   '/language',
   '/quit',

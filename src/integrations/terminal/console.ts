@@ -8,6 +8,7 @@ import { ClarificationCancelled } from '../../capabilities/clarification/tool.js
 import type { SessionManager } from '../../runtime/session/manager.js';
 import { runSessionTurn } from '../../runtime/turn.js';
 import type { RuntimeFactory } from './app.js';
+import { runClarificationConsole } from './clarification-console.js';
 import { handleSessionCommand, statusText } from './commands.js';
 import { readableTranscript, safeTerminalText } from './text.js';
 
@@ -81,6 +82,30 @@ export async function runConsole(
     stdout.write(`${safeTerminalText(text, true)}\n`);
   };
   const presenter = new ConsoleClarificationPresenter(input, emit);
+  const run = async (query: string) => {
+    const reason = await runSessionTurn(manager, runtimeFactory(presenter, emit), query);
+    if (reason === 'max_tool_use_turns') emit('本轮达到工具调用上限，可继续下一轮。');
+    const last = manager.messages.at(-1);
+    if (last?.role === 'assistant')
+      for (const entry of readableTranscript([last])) emit(entry.text);
+    return reason;
+  };
+  const clarify = () =>
+    runClarificationConsole(
+      manager,
+      () => input.read(),
+      emit,
+      presenter,
+      async (query) => {
+        try {
+          await run(query);
+        } catch (error) {
+          emit(
+            `Agent 运行失败：${error instanceof Error ? error.name : 'UnknownError'}；提交已保留，可显式重试。`,
+          );
+        }
+      },
+    );
   const present = () => {
     emit(statusText(manager));
     if (manager.current.status === 'interrupted')
@@ -98,6 +123,10 @@ export async function runConsole(
       emit('SpecPilot >>');
       const query = await input.read();
       if (query === null || ['q', 'exit', ''].includes(query.trim().toLowerCase())) return;
+      if (query.trim().toLowerCase() === '/clarify') {
+        await clarify();
+        continue;
+      }
       if (query.trim().toLowerCase() === '/switch') {
         const sessions = manager.listSessions();
         for (const [i, session] of sessions.entries()) {
@@ -136,12 +165,9 @@ export async function runConsole(
           continue;
         }
         if (result === 'handled') continue;
-        const reason = await runSessionTurn(manager, runtimeFactory(presenter, emit), query);
+        const reason = await run(query);
         if (reason === 'stop') return;
-        if (reason === 'max_tool_use_turns') emit('本轮达到工具调用上限，可继续下一轮。');
-        const last = manager.messages.at(-1);
-        if (last?.role === 'assistant')
-          for (const entry of readableTranscript([last])) emit(entry.text);
+        if (reason === 'clarification_round_ready') await clarify();
       } catch (error) {
         emit(
           `Agent 运行失败：${error instanceof Error ? error.name : 'UnknownError'}。当前轮次已标记为中断。`,
