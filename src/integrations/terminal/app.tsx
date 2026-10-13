@@ -176,7 +176,10 @@ export function TerminalApp({
     Math.max(0, lines.length - viewHeight),
   );
   useInput((input, key) => {
-    if ((key.ctrl && input === 'q') || (key.ctrl && input === 'c' && !question)) {
+    if (
+      (key.ctrl && input === 'q') ||
+      (key.ctrl && input === 'c' && !question && overlay !== 'clarify')
+    ) {
       if (busyRef.current) emit(t('notice.cannot_cancel'));
       else exit();
     }
@@ -234,7 +237,7 @@ export function TerminalApp({
           />
         ) : overlay === 'clarify' ? (
           <ClarificationBoard
-            key={session.session_id}
+            key={`${session.session_id}:${session.clarification_plan.rounds.at(-1)?.id ?? 'empty'}`}
             manager={manager}
             locale={locale}
             busy={busy}

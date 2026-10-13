@@ -52,13 +52,22 @@ export async function runClarificationConsole(
     if (raw === null || ['b', 'q', ''].includes(raw.trim().toLowerCase())) return;
     const value = raw.trim();
     try {
+      if (isClarificationStopRequest(value)) {
+        await run('/done');
+        return;
+      }
       if (value === 'a') {
         all = !all;
         continue;
       }
       if (value === 'n') {
         emit('请输入补充说明：');
-        manager.setClarificationNote((await read()) ?? '');
+        const value = (await read()) ?? '';
+        if (isClarificationStopRequest(value)) {
+          await run('/done');
+          return;
+        }
+        manager.setClarificationNote(value);
         continue;
       }
       if (value === 'x' || value === '/done') {

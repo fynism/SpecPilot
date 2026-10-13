@@ -1,5 +1,5 @@
 import { Box, Text, useInput, useStdout } from 'ink';
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import {
   latestAnswer,
   questionRequest,
@@ -45,14 +45,6 @@ export function ClarificationBoard({
   const columns = 'columns' in stdout && typeof stdout.columns === 'number' ? stdout.columns : 80;
   const [error, setError] = useState('');
   const [collapsed, setCollapsed] = useState<string[]>([]);
-  useEffect(() => {
-    if (round?.id) {
-      setIndex(0);
-      setAll(false);
-      setHistory(false);
-      setEditing(null);
-    }
-  }, [round?.id]);
   const t = (key: Parameters<typeof translate>[1], values?: Record<string, string | number>) =>
     translate(locale, key, values);
   const rows = all
@@ -82,6 +74,10 @@ export function ClarificationBoard({
   };
   useInput((input, key) => {
     if (editing || noteMode) return;
+    if (key.ctrl || key.meta) {
+      if (key.ctrl && input === 'c') onClose();
+      return;
+    }
     if (history) {
       const total = plan.answers.filter((a) => a.question_id === question?.id).length;
       if (key.escape || input === 'h') setHistory(false);
@@ -166,12 +162,17 @@ export function ClarificationBoard({
           initialValue={note}
           onSubmit={(value) =>
             attempt(() => {
+              if (isClarificationStopRequest(value)) {
+                setNoteMode(false);
+                onRun('/done');
+                return;
+              }
               manager.setClarificationNote(value);
               setNoteMode(false);
             })
           }
-          onSpecial={(_value, _input, key) => {
-            if (key.escape) {
+          onSpecial={(_value, input, key) => {
+            if (key.escape || (key.ctrl && input === 'c')) {
               setNoteMode(false);
               return true;
             }

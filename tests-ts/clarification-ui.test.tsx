@@ -115,6 +115,11 @@ describe('多轮清单实际按键', () => {
       screen.stdin.write('\u001b');
       await frame(screen, '澄清总览');
       expect(f.manager.clarification.get().answers).toEqual([]);
+      screen.stdin.write('\r');
+      await frame(screen, '需要确认');
+      screen.stdin.write('\u0003');
+      await frame(screen, '澄清总览');
+      expect(f.manager.clarification.get().answers).toEqual([]);
       screen.stdin.write('\t');
       await frame(screen, '全部主题');
       for (let i = 0; i < 4; i++) {
