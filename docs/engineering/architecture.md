@@ -95,6 +95,11 @@ Evaluation    → 公开接口和受控测试数据
 - `tooling/catalog.ts` 集中装配内置工具；`bootstrap.ts` 是 Ink 与 console 两个前端共用的组合根。
   Session 切换后创建独立运行时，网络客户端只在装配时创建。
 
+澄清总览属于 `capabilities/clarification/`：模型给出候选主题、问题与轮次，领域服务控制
+版本、依赖、答案来源和复核状态，Session 负责持久化，终端只编辑视图与草稿。
+Spec 的准备条件通过注入的澄清检查端口组合，不把 UI 或 Session 类型引入 Spec。
+设计取舍见 [ADR：多轮澄清总览](../adr/001-clarification-rounds.md)。
+
 ### 新模块接入实践
 
 新增用户能力时：

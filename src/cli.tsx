@@ -20,6 +20,7 @@ ANTHROPIC_BASE_URL 和 MAX_TOOL_USE_TURNS。
 /switch [session-id]   选择或直接切换 Session
 /rename <标题>        重命名当前 Session
 /status               显示 Session 和 Spec 状态
+/clarify              查看跨轮总览、编辑答案并按轮提交
 /done                 结束澄清，只总结已有信息
 /language [zh-CN|en-US] 切换全屏界面语言
 /quit                 退出

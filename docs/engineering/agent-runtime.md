@@ -51,9 +51,16 @@ Session 选择和 Clarification；`@inkjs/ui` 提供选择列表与运行状态�
 打印，注入的 event sink 更新状态。Session 切换只在轮次之间执行；完整 Loop 返回前不得把
 中间消息伪装成稳定恢复点。
 
-ClarificationPresenter 使用异步端口，答案仍必须绑定请求 ID 并在服务边界复验。应用卸载时
+旧单题 ClarificationPresenter 使用异步端口，答案仍必须绑定请求 ID 并在服务边界复验。应用卸载时
 拒绝等待中的澄清 Promise，避免永远等待。模型和工具仍没有协作式取消接口；运行中 Ctrl+C
 或 Ctrl+Q 明确拒绝退出，不伪造已取消。未来取消必须贯穿模型、工具和 Session 状态机。
+
+默认 CLI 使用多轮澄清总览。`publish_clarification_round` 是非阻塞工具；发布成功后
+Runtime 将当批所有 tool_use 配对为 tool_result，拒绝剩余调用，返回
+`clarification_round_ready`。发布校验失败不能触发这一停止原因。
+用户在轮次之间编辑、暂缓和提交答案，填写期间不调用模型；下一次运行统一调查、记录 Spec
+和准备追问。轮次发布与 Spec 变更随完整 Loop 一次保存，失败回退并保留用户提交。
+总览读取、轮次发布及 Spec 操作均进入统一 Tool 管线，不能由 UI 绕过领域校验。
 
 Transcript 根据结构化 role 渲染。用户翻页后暂停跟随，新消息不强制改变阅读位置；回到底部、
 切换 Session 或提交新请求恢复跟随。固定界面文案经稳定 i18n 键读取，locale 只改变当前进程

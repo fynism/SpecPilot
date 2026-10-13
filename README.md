@@ -57,6 +57,7 @@ npm registry；以上打包和安装都可以在本地完成。
 /switch [session-id]   无参数时选择，传完整 ID 时直接切换
 /rename <标题>        重命名当前 Session
 /status               显示当前 Session 和 Spec 状态
+/clarify              查看、编辑跨轮澄清总览
 /done                 结束澄清，只总结已有信息
 /language [zh-CN|en-US] 切换全屏界面语言
 /quit                 退出
@@ -66,31 +67,47 @@ npm registry；以上打包和安装都可以在本地完成。
 Ctrl+End 恢复跟随最新消息，以及 Ctrl+Q 退出。用户和 Agent 按结构化角色显示不同颜色。
 Session 选择每页 10 项，PgUp/PgDn 或 p/n 翻页，Enter 明确确认，Esc 取消。
 
-澄清界面默认高亮推荐项；只有用户提交后才形成答案。方向键选择其他选项；直接输入是自由
-回答；输入文字后按方向键或 Tab，可同时提交选项与补充。Enter 提交，Esc/Ctrl+C 取消。
-管道模式使用编号选择，空行主动确认推荐项，也允许直接输入回答。
+Agent 先调查仓库，再发布本轮问题并返回澄清总览。总览包含全部已识别主题和待细化事项，
+每轮默认推荐三题、最多五题。用户可任意顺序作答、暂缓或回改；编辑期间不调用模型。
+答案先保存为草稿，按 `c` 才统一提交给下一轮 Agent；草稿和补充说明重启后仍保留。
+
+总览按 `Tab` 切换本轮／全部主题，方向键与 PgUp/PgDn 导航，Enter 编辑问题或展开主题；
+`d` 暂缓／恢复，`h` 查看修订历史，`n` 补充说明，`r` 显式重试，`x` 结束澄清，`b` 返回对话。
+历史中方向键切换修订，PgUp/PgDn 阅读全文。问题编辑器默认高亮推荐项，只有 Enter 才保存
+答案；直接输入是自由回答，Tab 可同时选中方向并保留补充。Esc 取消不会确认推荐项。
+窄屏问题编辑器可通过 Ctrl+O 打开完整详情，PgUp/PgDn 翻页，查看详情不会丢失正在输入的文字。
+Console 使用同等编号菜单，`a` 切换本轮／全部、`d <编号>` 暂缓／恢复、`h <编号>` 查看历史。
+
+暂缓不等于解决，空轮次不等于 Spec 完整。修改已确认答案会标记相关问题与结论需要复核。
+运行失败时保留提交并标记可重试；系统不自动重放。运行中的总览只读。
 
 `/done`、`到此为止`、`先到这里`、`停止澄清` 等完整结束表达会让下一轮只总结已知信息。
-Runtime 不向模型开放工具，也会拒绝异常返回的工具调用；用户在澄清界面输入结束语后，同批
-后续工具同样被拒绝。总结后可继续输入新需求。管道模式兼容 `q`、`exit` 和空输入退出。
+Runtime 不向模型开放工具，也会拒绝异常返回的工具调用；未提交草稿不会成为已确认结论。
+总结后可继续输入新需求。管道模式兼容 `q`、`exit` 和空输入退出。
 
 ## 功能与兼容边界
 
-- 保留列目录、搜索、按行读取、澄清、读取 Spec、原子 Patch、校验和导出八个工具；
+- 默认九个工具：仓库调查三项、总览读取与轮次发布两项、Spec 读取／Patch／校验／导出四项；
+- 原阻塞式单题澄清服务保留兼容契约，但默认 CLI 不向模型暴露该工具；
 - Spec 保留目标、范围、需求、决策、假设、未决问题、验收条件和证据；Zod 严格校验输入及引用；
 - Spec 采用乐观版本校验和整批 Patch 提交，非法修改不影响旧状态；
 - 每个 Session 独占历史与 Spec，重启恢复上次活动项；未完成轮次标记中断并且不自动重放；
 - 文件路径在解析符号链接后复验工作区边界，状态文件采用同目录临时文件加原子替换；
 - 语言切换只改变当前进程的 UI 文案，不翻译历史、Spec、系统提示或模型回答。
 
-原 Python `schema_version=1` 的 Session / Spec JSON、ID、版本历史及目录格式继续兼容：
+旧 Python `schema_version=1` 的 Session 可读，首次保存前生成同目录 `session.json.v1.bak`，
+随后写入包含澄清总览的 Session v2；Spec 仍为 v1，ID、版本历史及目录布局保持兼容：
 
 ```text
 .specpilot/sessions/index.json
 .specpilot/sessions/<session_id>/session.json
+.specpilot/sessions/<session_id>/session.json.v1.bak
 .specpilot/specs/<spec_id>/spec.json
 .specpilot/specs/<spec_id>/SPEC.md
 ```
+
+旧程序不能读取 Session v2。回退前保留当前 v2 快照，再恢复 v1 备份；备份之后的交互数据
+不会出现在旧程序中。迁移保持幂等，不自动重放旧会话中的模型或工具动作。
 
 Python CLI、`code.py`、pip/uv 依赖与旧 Python 测试已移除；使用上面的 npm 命令启动。
 `.env` 现在从**启动工作区**读取，npm 安装位置不作为配置根目录。
@@ -98,6 +115,8 @@ Python CLI、`code.py`、pip/uv 依赖与旧 Python 测试已移除；使用上�
 MVP 仍只支持单进程写入和完整轮次之间恢复；不支持工具执行中 checkpoint、跨 worktree
 共享或安全中断正在执行的模型/工具调用。运行时 UI 会明确拒绝强制退出操作。
 Skill Loader、Context Compaction、MCP 和 Permission HITL 尚未实现。
+
+多轮行为评测与真实模型成本／质量对比方法见 [澄清评测](evals/clarification-rounds.md)。
 
 ## 工程验证
 
