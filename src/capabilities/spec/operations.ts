@@ -90,7 +90,7 @@ export class SpecToolService {
     return JSON.stringify(result);
   }
 
-  applySpecPatch(input: SpecPatch): string {
+  applySpecPatch(input: SpecPatch, hostEvidence = false): string {
     const patch = patchSchema.parse(input);
     const working = this.currentSpec();
     if (working.version !== patch.expected_version)
@@ -109,6 +109,15 @@ export class SpecToolService {
       } else {
         const { op, ...data } = operation;
         if (op === 'record_evidence') {
+          if (
+            !hostEvidence &&
+            (operation.locator.startsWith('clarification:ANSWER-') ||
+              operation.locator.startsWith('clarification-note:'))
+          )
+            throw new SpecMutationError(
+              'immutable_evidence',
+              '宿主澄清证据只能由真实提交创建，请引用 get_spec 中已有 Evidence ID',
+            );
           const existing = working.evidence.find((e) => e.id === data.id);
           if (
             existing &&

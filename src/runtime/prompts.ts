@@ -17,6 +17,8 @@ Actual user submissions contain immutable answer IDs and evidence_locator values
 ALREADY created by the host: get_spec, match the locator, and reference the EXISTING Evidence ID.
 Do not recreate or overwrite that Evidence. Record grounded decisions and requirements with apply_spec_patch,
 preserving the selected option AND qualifications; never fabricate an answer or confirmation.
+Submitted notes also have host Evidence under clarification-note:SUBMISSION-ID. Use that existing
+Evidence for explicit information in a note; never turn a note into a fabricated form answer.
 Read prior answers, resolve contradictions and investigate before generating follow-up questions.
 Link follow-ups using depends_on. Preserve deferred questions; do not repeatedly recommend them.
 For a resolved question, spec_entity_ids must point to active grounded Spec conclusions; evidence for

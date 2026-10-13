@@ -127,40 +127,79 @@ export class SessionManager {
     if (!request.trim()) throw new Error('用户请求不能为空');
     if (!['waiting_for_user', 'interrupted'].includes(session.status))
       throw new Error('当前状态不能开始新轮次');
-    // 已提交答案的证据由宿主创建，模型只能引用；草稿不进入 Spec。
-    const spec = this.currentSpec();
-    const answers = isClarificationStopRequest(request)
-      ? []
-      : session.clarification_plan.answers.filter(
-          (a) =>
-            a.submission_id && !spec.evidence.some((e) => e.locator === `clarification:${a.id}`),
-        );
-    if (answers.length) {
-      let next = Math.max(0, ...spec.evidence.map((e) => Number(e.id.slice(2))));
-      for (let offset = 0; offset < answers.length; offset += 20) {
-        const current = this.currentSpec();
+    const specStore = this.require().specStore;
+    try {
+      // 已提交答案的证据由宿主创建，模型只能引用；草稿不进入 Spec。
+      const spec = this.currentSpec();
+      const answers = isClarificationStopRequest(request)
+        ? []
+        : session.clarification_plan.answers.filter(
+            (a) =>
+              a.submission_id && !spec.evidence.some((e) => e.locator === `clarification:${a.id}`),
+          );
+      const pendingSubmission = session.clarification_plan.submissions.some(
+        (s) => s.status === 'pending',
+      );
+      const notes = isClarificationStopRequest(request)
+        ? []
+        : session.clarification_plan.submissions.filter(
+            (s) =>
+              s.note.trim() &&
+              !spec.evidence.some((e) => e.locator === `clarification-note:${s.id}`),
+          );
+      if (
+        !isClarificationStopRequest(request) &&
+        (answers.length || pendingSubmission) &&
+        ['ready_for_approval', 'approved'].includes(spec.status)
+      ) {
         this.specTools.applySpecPatch({
-          expected_version: current.version,
-          change_reason: '保存真实澄清提交证据',
-          operations: answers.slice(offset, offset + 20).map((a) => ({
-            op: 'record_evidence' as const,
-            id: `E-${String(++next).padStart(3, '0')}`,
-            kind: 'clarification' as const,
-            summary: JSON.stringify(a.answer),
-            locator: `clarification:${a.id}`,
-          })),
+          expected_version: spec.version,
+          change_reason: '用户提交新的澄清信息，撤回旧的准备状态',
+          operations: [{ op: 'set_spec_metadata', title: null, status: 'revised' }],
         });
       }
+      if (answers.length || notes.length) {
+        let next = Math.max(0, ...spec.evidence.map((e) => Number(e.id.slice(2))));
+        const records = [
+          ...answers.map((a) => ({
+            summary: `用户选项：${a.answer.selected_option_id ?? '未选择'}\n用户补充：${a.answer.free_text ?? '无'}`,
+            locator: `clarification:${a.id}`,
+          })),
+          ...notes.map((s) => ({ summary: s.note, locator: `clarification-note:${s.id}` })),
+        ];
+        for (let offset = 0; offset < records.length; offset += 20) {
+          const current = this.currentSpec();
+          this.specTools.applySpecPatch(
+            {
+              expected_version: current.version,
+              change_reason: '保存真实澄清提交证据',
+              operations: records.slice(offset, offset + 20).map((a) => ({
+                op: 'record_evidence' as const,
+                id: `E-${String(++next).padStart(3, '0')}`,
+                kind: 'clarification' as const,
+                summary: a.summary,
+                locator: a.locator,
+              })),
+            },
+            true,
+          );
+        }
+      }
+      // 先保存稳定运行起点；失败不能把未配对 tool_use 写为恢复点。
+      this.persist({
+        ...this.current,
+        status: 'running',
+        active_request: request,
+        messages: [...session.messages, { role: 'user', content: request }],
+        updated_at: this.clock(),
+      });
+    } catch (error) {
+      // 保持已装配服务的 Store 身份，撤回未保存的宿主证据与状态变更。
+      specStore.restoreHistory(session.spec_versions);
+      throw error;
     }
-    // 先保存稳定运行起点；失败不能把未配对 tool_use 写为恢复点。
-    this.persist({
-      ...this.current,
-      status: 'running',
-      active_request: request,
-      messages: [...session.messages, { role: 'user', content: request }],
-      updated_at: this.clock(),
-    });
   }
+
   completeTurn(): void {
     if (this.require().record.status !== 'running') throw new Error('当前没有运行中的轮次');
     this.clarification.markRetry();

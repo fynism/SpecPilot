@@ -3,7 +3,8 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { LocalSessionStore } from '../src/integrations/filesystem/session-store.js';
 import type { SessionManager } from '../src/runtime/session/manager.js';
-import { required, temporaryManager } from './helpers.js';
+import { SessionManager as PersistentManager } from '../src/runtime/session/manager.js';
+import { completePatch, required, temporaryManager } from './helpers.js';
 import { answer, currentPatch, initialRound } from './round-helpers.js';
 
 function ground(manager: SessionManager, id: string, decisionId = 'D-001') {
@@ -32,13 +33,116 @@ function ground(manager: SessionManager, id: string, decisionId = 'D-001') {
 }
 
 describe('多轮澄清领域状态', () => {
+  it('补充说明提交生成真实证据，可解决问题且不伪造表单答案', () => {
+    const f = temporaryManager();
+    try {
+      f.manager.clarification.publish(initialRound());
+      const query = required(f.manager.submitClarification('note_one', '仅管理员可以导出'));
+      f.manager.beginTurn(query);
+      const spec = f.manager.currentSpec();
+      const evidence = required(
+        spec.evidence.find((e) => e.locator === 'clarification-note:note_one'),
+      );
+      f.manager.specTools.applySpecPatch({
+        expected_version: spec.version,
+        change_reason: '记录明确补充',
+        operations: [
+          {
+            op: 'record_decision',
+            id: 'D-001',
+            statement: '仅管理员导出',
+            evidence_ids: [evidence.id],
+            made_by: 'user',
+            rationale: '用户明确补充',
+            supersedes_id: null,
+          },
+        ],
+      });
+      const patch = currentPatch(f.manager);
+      required(patch.questions[0]).status = 'resolved';
+      required(patch.questions[0]).spec_entity_ids = ['D-001'];
+      f.manager.clarification.publish(patch);
+      f.manager.completeTurn();
+      expect(f.manager.clarification.get().questions[0]?.status).toBe('resolved');
+      expect(f.manager.clarification.get().answers).toEqual([]);
+      expect(() =>
+        f.manager.specTools.applySpecPatch({
+          expected_version: f.manager.currentSpec().version,
+          change_reason: '模型不能制造宿主证据',
+          operations: [
+            {
+              op: 'record_evidence',
+              id: 'E-099',
+              kind: 'clarification',
+              summary: '伪造答复',
+              locator: 'clarification:ANSWER-fake',
+            },
+          ],
+        }),
+      ).toThrow('宿主');
+    } finally {
+      f.cleanup();
+    }
+  });
+  it('保存运行起点失败时回滚宿主证据，并保持既有服务的 Store 引用', () => {
+    const f = temporaryManager();
+    try {
+      const store = new LocalSessionStore(f.root);
+      const manager = new PersistentManager({
+        save: (record) => {
+          if (record.status === 'running') throw new Error('模拟保存失败');
+          store.save(record);
+        },
+        load: (id) => store.load(id),
+        listSessions: () => store.listSessions(),
+        activeSessionId: () => store.activeSessionId(),
+        setActive: (id) => store.setActive(id),
+      });
+      manager.start();
+      manager.clarification.publish(initialRound());
+      answer(manager, 'users');
+      const query = required(manager.submitClarification('save_failure'));
+      const boundService = manager.specTools;
+      const before = manager.currentSpec();
+      expect(() => manager.beginTurn(query)).toThrow('模拟保存失败');
+      expect(manager.currentSpec()).toEqual(before);
+      expect(JSON.parse(boundService.getSpec())).toEqual(before);
+      expect(manager.clarification.get().submissions).toHaveLength(1);
+    } finally {
+      f.cleanup();
+    }
+  });
+  it('已待批准的 Spec 在新提交后可继续澄清，完整保留最长自由回答', () => {
+    const f = temporaryManager();
+    try {
+      f.manager.specTools.applySpecPatch(
+        completePatch(f.manager.specTools) as Parameters<
+          typeof f.manager.specTools.applySpecPatch
+        >[0],
+      );
+      f.manager.specTools.applySpecPatch({
+        expected_version: f.manager.currentSpec().version,
+        change_reason: '准备审阅',
+        operations: [{ op: 'set_spec_metadata', title: null, status: 'ready_for_approval' }],
+      });
+      f.manager.clarification.publish(initialRound());
+      answer(f.manager, 'users', '"'.repeat(1000));
+      const query = required(f.manager.submitClarification('changed_answer'));
+      f.manager.beginTurn(query);
+      expect(f.manager.currentSpec().status).toBe('revised');
+      expect(f.manager.currentSpec().evidence.at(-1)?.summary).toContain('"'.repeat(1000));
+      f.manager.completeTurn();
+    } finally {
+      f.cleanup();
+    }
+  });
   it('首次回答关联了草稿实体的问题，不把草稿目标误标为已确认结论的复核', () => {
     const f = temporaryManager();
     try {
       f.manager.specTools.applySpecPatch({
         expected_version: 1,
         change_reason: '规划初始目标',
-        operations: [{ op: 'put_goal', id: 'G-001', statement: '导出业务数据' }],
+        operations: [{ op: 'put_goal', id: 'G-001', statement: '导出业务数据', evidence_ids: [] }],
       });
       const initial = initialRound();
       required(initial.questions[0]).spec_entity_ids = ['G-001'];

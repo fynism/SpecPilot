@@ -68,10 +68,20 @@ export class ClarificationPlanService {
     const evidence = spec.evidence.filter((e) =>
       entities.some((i) => i.evidence_ids.includes(e.id)),
     );
-    return evidence.some((e) =>
-      latest
-        ? e.kind === 'clarification' && e.locator === `clarification:${latest.id}`
-        : e.kind === 'repository',
+    const latestNote = plan.submissions.findLast((s) => s.note.trim());
+    const noteAfterAnswer =
+      latestNote &&
+      (!latest ||
+        plan.submissions.findIndex((s) => s.id === latestNote.id) >=
+          plan.submissions.findIndex((s) => s.id === latest.submission_id));
+    return evidence.some(
+      (e) =>
+        (noteAfterAnswer &&
+          e.kind === 'clarification' &&
+          e.locator === `clarification-note:${latestNote.id}`) ||
+        (latest
+          ? e.kind === 'clarification' && e.locator === `clarification:${latest.id}`
+          : e.kind === 'repository'),
     );
   }
   publish(input: PublishRound): string {
@@ -286,6 +296,7 @@ export class ClarificationPlanService {
       type: 'clarification_submission',
       session_id: this.sessionId,
       submission,
+      note_evidence_locator: submission.note.trim() ? `clarification-note:${submission.id}` : null,
       answers: plan.answers
         .filter((a) => submission.answer_ids.includes(a.id))
         .map((a) => ({

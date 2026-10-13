@@ -59,4 +59,11 @@ export class InMemorySpecStore {
     if (!history) throw new Error(`Spec 不存在：${id}`);
     return structuredClone(history);
   }
+  /** 同步恢复尚未提交的内存事务，保持已装配 Tool Service 的 Store 引用不变。 */
+  restoreHistory(history: Specification[]): void {
+    const validated = InMemorySpecStore.fromHistory(history, this.clock);
+    const first = history[0];
+    if (!first) throw new Error('缺少恢复历史');
+    this.records.set(first.spec_id, validated.history(first.spec_id));
+  }
 }
