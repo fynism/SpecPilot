@@ -18,7 +18,9 @@ describe('严格契约与兼容配置', () => {
     const original = JSON.parse(
       readFileSync(new URL('./fixtures/python-session-v1.json', import.meta.url), 'utf8'),
     );
-    expect(sessionSchema.parse(original)).toEqual(original);
+    const migrated = sessionSchema.parse(original);
+    expect(migrated).toMatchObject({ ...original, schema_version: 2 });
+    expect(migrated.clarification_plan.questions).toEqual([]);
     expect(() => sessionSchema.parse({ ...original, schema_version: 2 })).toThrow();
     expect(() => sessionSchema.parse({ ...original, status: 'running' })).toThrow();
     expect(() =>

@@ -66,7 +66,7 @@ export class LocalSessionStore implements SessionStore {
       atomicWrite(
         this.root,
         this.path(session.data.session_id),
-        `${JSON.stringify(session.data, null, 2)}\n`,
+        this.backupV1(session.data.session_id, session.data),
       );
       if (!index.session_ids.includes(session.data.session_id)) {
         index.session_ids.push(session.data.session_id);
@@ -75,6 +75,15 @@ export class LocalSessionStore implements SessionStore {
     } catch (error) {
       throw new SessionStorageError('无法安全写入 Session 文件', { cause: error });
     }
+  }
+  private backupV1(id: string, session: SessionRecord): string {
+    const path = this.path(id);
+    if (existsSync(path)) {
+      const original = readFileSync(path, 'utf8');
+      if (JSON.parse(original).schema_version === 1 && !existsSync(`${path}.v1.bak`))
+        atomicWrite(this.root, `${path}.v1.bak`, original);
+    }
+    return `${JSON.stringify(session, null, 2)}\n`;
   }
   load(id: string): SessionRecord {
     const path = this.path(id);

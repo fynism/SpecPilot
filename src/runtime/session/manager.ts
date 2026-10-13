@@ -1,3 +1,4 @@
+import { ClarificationPlanService } from '../../capabilities/clarification/plan.js';
 import { type Clock, newId, type Specification, utcNow } from '../../capabilities/spec/models.js';
 import { SpecToolService } from '../../capabilities/spec/operations.js';
 import { InMemorySpecStore } from '../../capabilities/spec/store.js';
@@ -27,7 +28,48 @@ export class SessionManager {
   }
   get specTools(): SpecToolService {
     const { record, specStore } = this.require();
-    return new SpecToolService(specStore, record.spec_id, this.clock);
+    return new SpecToolService(specStore, record.spec_id, this.clock, () =>
+      this.clarification.validationIssues(),
+    );
+  }
+  get clarification(): ClarificationPlanService {
+    return this.clarificationService();
+  }
+  clarificationService(published?: () => void): ClarificationPlanService {
+    return new ClarificationPlanService(
+      this.require().record.session_id,
+      () => this.require().record.clarification_plan,
+      (plan) => {
+        const record = { ...this.current, clarification_plan: plan, updated_at: this.clock() };
+        if (record.status === 'running') {
+          // Loop 持有 messages 引用；仅更新规划字段，不能替换运行中的消息容器。
+          this.require().record.clarification_plan = plan;
+          this.require().record.updated_at = record.updated_at;
+        } else this.persist(record);
+      },
+      () => this.currentSpec(),
+      published,
+    );
+  }
+  editClarification(input: Parameters<ClarificationPlanService['edit']>[0]): void {
+    if (this.current.status === 'running') throw new Error('Agent 运行中不能编辑答案');
+    this.clarification.edit(input);
+  }
+  deferClarification(id: string, deferred: boolean): void {
+    if (this.current.status === 'running') throw new Error('Agent 运行中不能暂缓问题');
+    this.clarification.defer(id, deferred);
+  }
+  submitClarification(id: string, note = ''): string | null {
+    if (this.current.status === 'running') throw new Error('Agent 运行中不能重复提交');
+    return this.clarification.submit(id, note);
+  }
+  setClarificationNote(note: string): void {
+    if (this.current.status === 'running') throw new Error('Agent 运行中不能编辑补充说明');
+    this.clarification.setNote(note);
+  }
+  retryClarification(): string {
+    if (this.current.status === 'running') throw new Error('Agent 运行中不能重试');
+    return this.clarification.retry();
   }
   currentSpec(): Specification {
     return this.specTools.currentSpec();
@@ -44,6 +86,8 @@ export class SessionManager {
   private recover(session: SessionRecord): SessionRecord {
     if (session.status !== 'running') return session;
     const interrupted = { ...session, status: 'interrupted' as const, updated_at: this.clock() };
+    for (const submission of interrupted.clarification_plan.submissions)
+      if (submission.status === 'pending') submission.status = 'retry';
     this.store.save(interrupted);
     return interrupted;
   }
@@ -82,9 +126,31 @@ export class SessionManager {
     if (!request.trim()) throw new Error('用户请求不能为空');
     if (!['waiting_for_user', 'interrupted'].includes(session.status))
       throw new Error('当前状态不能开始新轮次');
+    // 已提交答案的证据由宿主创建，模型只能引用；草稿不进入 Spec。
+    const spec = this.currentSpec();
+    const answers = session.clarification_plan.answers.filter(
+      (a) => a.submission_id && !spec.evidence.some((e) => e.locator === `clarification:${a.id}`),
+    );
+    if (answers.length) {
+      let next = Math.max(0, ...spec.evidence.map((e) => Number(e.id.slice(2))));
+      for (let offset = 0; offset < answers.length; offset += 20) {
+        const current = this.currentSpec();
+        this.specTools.applySpecPatch({
+          expected_version: current.version,
+          change_reason: '保存真实澄清提交证据',
+          operations: answers.slice(offset, offset + 20).map((a) => ({
+            op: 'record_evidence' as const,
+            id: `E-${String(++next).padStart(3, '0')}`,
+            kind: 'clarification' as const,
+            summary: JSON.stringify(a.answer),
+            locator: `clarification:${a.id}`,
+          })),
+        });
+      }
+    }
     // 先保存稳定运行起点；失败不能把未配对 tool_use 写为恢复点。
     this.persist({
-      ...session,
+      ...this.current,
       status: 'running',
       active_request: request,
       messages: [...session.messages, { role: 'user', content: request }],
@@ -93,6 +159,7 @@ export class SessionManager {
   }
   completeTurn(): void {
     if (this.require().record.status !== 'running') throw new Error('当前没有运行中的轮次');
+    this.clarification.markRetry();
     this.persist({
       ...this.current,
       status: 'waiting_for_user',
@@ -108,5 +175,7 @@ export class SessionManager {
     const interrupted = { ...stable, status: 'interrupted' as const, updated_at: this.clock() };
     this.store.save(interrupted);
     this.activate(interrupted);
+    this.clarification.markRetry();
+    this.persist(this.current);
   }
 }

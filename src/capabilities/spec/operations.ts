@@ -16,7 +16,7 @@ import {
   utcNow,
 } from './models.js';
 import { InMemorySpecStore } from './store.js';
-import { validateSpecification } from './validation.js';
+import { type ValidationIssue, validateSpecification } from './validation.js';
 
 const operationsSchema = z.discriminatedUnion('op', [
   goalSchema.omit({ lifecycle: true }).extend({ op: z.literal('put_goal') }),
@@ -60,6 +60,7 @@ export class SpecToolService {
     readonly store: InMemorySpecStore,
     readonly specId: string,
     private readonly clock: Clock = utcNow,
+    private readonly additionalIssues: () => ValidationIssue[] = () => [],
   ) {}
   static create(title = '当前需求', clock: Clock = utcNow): SpecToolService {
     const store = new InMemorySpecStore(clock);
@@ -73,7 +74,10 @@ export class SpecToolService {
     return JSON.stringify(this.currentSpec());
   }
   validateSpec(): string {
-    return JSON.stringify(validateSpecification(this.currentSpec()));
+    const result = validateSpecification(this.currentSpec());
+    result.issues.push(...this.additionalIssues());
+    result.ready_for_approval = !result.issues.some((i) => i.severity === 'error');
+    return JSON.stringify(result);
   }
 
   applySpecPatch(input: SpecPatch): string {
@@ -93,6 +97,16 @@ export class SpecToolService {
         item.lifecycle = 'retired';
       } else {
         const { op, ...data } = operation;
+        if (op === 'record_evidence') {
+          const existing = working.evidence.find((e) => e.id === data.id);
+          if (
+            existing &&
+            (existing.summary !== operation.summary ||
+              existing.kind !== operation.kind ||
+              existing.locator !== operation.locator)
+          )
+            throw new Error('Evidence 不可改写，必须添加新的证据');
+        }
         const mapping = {
           put_goal: 'goals',
           put_scope_item: 'scope',
@@ -117,6 +131,11 @@ export class SpecToolService {
       }
     }
     const candidate = specificationSchema.parse(working);
+    if (
+      candidate.status === 'ready_for_approval' &&
+      this.additionalIssues().some((i) => i.severity === 'error')
+    )
+      throw new Error('存在未完成的澄清事项，不能进入待批准状态');
     return JSON.stringify(this.store.save(candidate, patch.expected_version));
   }
 }

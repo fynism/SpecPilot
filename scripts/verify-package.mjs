@@ -95,7 +95,8 @@ try {
     ),
   );
   assert.equal(session.title, 'npm会话');
-  assert.equal(session.schema_version, 1);
+  assert.equal(session.schema_version, 2);
+  assert.equal(session.clarification_plan.version, 0);
   console.log('npm 分发验收通过：本地 tarball、仅生产依赖、CLI shim、帮助/版本、管道 Session。');
 } finally {
   // 删除前复验绝对目标确为本脚本新建的临时目录，不接受任意环境输入作为删除对象。
