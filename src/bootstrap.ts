@@ -5,6 +5,7 @@ import { AnthropicModelClient } from './integrations/anthropic/model.js';
 import { AgentRuntime } from './runtime/agent.js';
 import { buildDefaultHooks } from './runtime/hooks.js';
 import type { ModelClient } from './runtime/model.js';
+import { ROUND_SYSTEM } from './runtime/prompts.js';
 import type { SessionManager } from './runtime/session/manager.js';
 import { buildDefaultRegistry } from './tooling/catalog.js';
 import { ToolExecutor } from './tooling/executor.js';
@@ -17,13 +18,21 @@ export function buildSessionRuntime(
   presenter: ClarificationPresenter,
   emit: (text: string) => void,
   client?: ModelClient,
+  clarificationMode: 'rounds' | 'single' = 'rounds',
 ): AgentRuntime {
   const hooks = buildDefaultHooks(root, emit);
   const stop = new ClarificationStopController();
   hooks.register('ClarificationAnswered', (_request, answer) => {
     stop.observeAnswer(answer);
   });
-  const registry = buildDefaultRegistry(root, manager.specTools, presenter, hooks.trigger);
+  let ready = false;
+  const plan =
+    clarificationMode === 'rounds'
+      ? manager.clarificationService(() => {
+          ready = true;
+        })
+      : undefined;
+  const registry = buildDefaultRegistry(root, manager.specTools, presenter, hooks.trigger, plan);
   return new AgentRuntime(
     client ?? new AnthropicModelClient(settings),
     hooks,
@@ -32,5 +41,7 @@ export function buildSessionRuntime(
     stop,
     settings.max_tool_use_turns,
     emit,
+    () => ready,
+    clarificationMode === 'rounds' ? ROUND_SYSTEM : undefined,
   );
 }

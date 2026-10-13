@@ -1,7 +1,6 @@
 import { cpSync, existsSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { buildSessionRuntime } from '../src/bootstrap.js';
 import { answerSchema } from '../src/capabilities/clarification/models.js';
 import {
   ClarificationStopController,
@@ -18,6 +17,7 @@ import { buildDefaultRegistry } from '../src/tooling/catalog.js';
 import type { ToolCall } from '../src/tooling/contracts.js';
 import { ToolExecutor } from '../src/tooling/executor.js';
 import {
+  buildLegacySessionRuntime as buildSessionRuntime,
   call,
   clarification,
   completePatch,

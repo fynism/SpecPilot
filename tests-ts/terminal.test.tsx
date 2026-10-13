@@ -4,7 +4,6 @@ import { Readable, Writable } from 'node:stream';
 import { pathToFileURL } from 'node:url';
 import { cleanup, render } from 'ink-testing-library';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { buildSessionRuntime } from '../src/bootstrap.js';
 import type { ClarificationAnswer } from '../src/capabilities/clarification/models.js';
 import { TerminalApp } from '../src/integrations/terminal/app.js';
 import { catalogs } from '../src/integrations/terminal/catalogs.js';
@@ -13,7 +12,13 @@ import { runConsole } from '../src/integrations/terminal/console.js';
 import { resolveLocale } from '../src/integrations/terminal/i18n.js';
 import { ClarificationOverlay, SessionOverlay } from '../src/integrations/terminal/overlays.js';
 import { readableTranscript, safeTerminalText } from '../src/integrations/terminal/text.js';
-import { call, clarification, ScriptedClient, temporaryManager } from './helpers.js';
+import {
+  buildLegacySessionRuntime as buildSessionRuntime,
+  call,
+  clarification,
+  ScriptedClient,
+  temporaryManager,
+} from './helpers.js';
 
 afterEach(cleanup);
 type Screen = ReturnType<typeof render>;

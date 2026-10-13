@@ -3,6 +3,10 @@ import {
   type ClarificationPresenter,
   clarificationInputSchema,
 } from '../capabilities/clarification/models.js';
+import {
+  type ClarificationPlanService,
+  publishRoundSchema,
+} from '../capabilities/clarification/plan.js';
 import { ClarificationService } from '../capabilities/clarification/tool.js';
 import {
   listInputSchema,
@@ -21,6 +25,7 @@ export function buildDefaultRegistry(
   spec: SpecToolService,
   presenter: ClarificationPresenter,
   dispatch: HookDispatcher,
+  plan?: ClarificationPlanService,
 ): ToolRegistry {
   const registry = new ToolRegistry();
   const repository = new RepositoryReader(root);
@@ -42,13 +47,28 @@ export function buildDefaultRegistry(
     readInputSchema,
     (i) => repository.readFile(i),
   );
-  const clarification = new ClarificationService(presenter, dispatch);
-  registry.register(
-    'request_clarification',
-    '针对一个高影响需求问题向用户提供 2 至 5 个选项、一个有依据的推荐项，并允许用户直接输入回答，或为选中的方向补充限制条件。',
-    clarificationInputSchema,
-    (i) => clarification.request(i),
-  );
+  if (plan) {
+    registry.register(
+      'get_clarification_plan',
+      '读取当前澄清总览、轮次、真实回答历史与待复核事项。',
+      z.strictObject({}),
+      () => JSON.stringify(plan.get()),
+    );
+    registry.register(
+      'publish_clarification_round',
+      '按预期版本更新完整总览并发布最多五个本轮问题，默认三个；保留所有旧 ID。此工具不会等待用户，成功后立即结束本轮，必须最后调用。解决问题必须关联真实证据；不得把推荐当作回答。',
+      publishRoundSchema,
+      (i) => plan.publish(i),
+    );
+  } else {
+    const clarification = new ClarificationService(presenter, dispatch);
+    registry.register(
+      'request_clarification',
+      '针对一个高影响需求问题向用户提供 2 至 5 个选项、一个有依据的推荐项，并允许用户直接输入回答，或为选中的方向补充限制条件。',
+      clarificationInputSchema,
+      (i) => clarification.request(i),
+    );
+  }
   const empty = z.strictObject({});
   registry.register('get_spec', '读取当前 Specification 最新版本的完整结构化事实。', empty, () =>
     spec.getSpec(),

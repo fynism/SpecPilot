@@ -5,7 +5,7 @@ import type { HookRegistry } from './hooks.js';
 import { type Message, type ModelClient, modelBlockSchema } from './model.js';
 import { FINAL_RESPONSE_SYSTEM_SUFFIX, SYSTEM } from './prompts.js';
 
-export type StopReason = 'model_complete' | 'max_tool_use_turns';
+export type StopReason = 'model_complete' | 'max_tool_use_turns' | 'clarification_round_ready';
 
 /** 模型选择路径，确定性代码约束输入、工具执行、预算与终止。 */
 export class AgentRuntime {
@@ -17,6 +17,8 @@ export class AgentRuntime {
     private readonly stop: ClarificationStopController,
     private readonly maxToolUseTurns: number,
     private readonly emit: (text: string) => void,
+    private readonly roundReady: () => boolean = () => false,
+    private readonly system: string = SYSTEM,
   ) {
     if (!Number.isInteger(maxToolUseTurns) || maxToolUseTurns < 1)
       throw new Error('工具轮次上限必须为正整数');
@@ -29,7 +31,7 @@ export class AgentRuntime {
         await this.client.createMessage(
           messages,
           toolsEnabled ? this.registry.toolSpecs() : [],
-          toolsEnabled ? SYSTEM : SYSTEM + FINAL_RESPONSE_SYSTEM_SUFFIX,
+          toolsEnabled ? this.system : this.system + FINAL_RESPONSE_SYSTEM_SUFFIX,
           8000,
         )
       ).map((block) => modelBlockSchema.parse(block));
@@ -47,14 +49,17 @@ export class AgentRuntime {
       for (const call of calls) {
         let output = 'Error: 用户已结束澄清，本轮禁止调用工具；请直接总结已有上下文。';
         // 即便供应商异常返回 tool_use，也在执行器之前确定性拒绝；同批余下调用同样受约束。
-        if (toolsEnabled && !this.stop.requested) {
+        if (toolsEnabled && !this.stop.requested && !this.roundReady()) {
           this.emit(`执行工具：${call.name}`);
           output = await this.executor.execute(call.name, call.input);
           this.emit(`工具完成：${call.name} · ${Array.from(output).length} 字符`);
+        } else if (this.roundReady()) {
+          output = 'Error: 本轮问题已发布，后续工具调用被拒绝；请等待用户按轮提交。';
         }
         results.push({ type: 'tool_result', tool_use_id: call.id, content: output });
       }
       messages.push({ role: 'user', content: results });
+      if (this.roundReady()) return 'clarification_round_ready';
       const stopRequested = this.stop.consumeRequest();
       if (stopRequested) toolsEnabled = false;
       toolTurns++;

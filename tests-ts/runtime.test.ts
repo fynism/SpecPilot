@@ -3,7 +3,6 @@ import { join } from 'node:path';
 import Anthropic from '@anthropic-ai/sdk';
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
-import { buildSessionRuntime } from '../src/bootstrap.js';
 import {
   answerSchema,
   type ClarificationPresenter,
@@ -21,6 +20,7 @@ import { runSessionTurn } from '../src/runtime/turn.js';
 import { ToolExecutor } from '../src/tooling/executor.js';
 import { ToolRegistry } from '../src/tooling/registry.js';
 import {
+  buildLegacySessionRuntime as buildSessionRuntime,
   call,
   clarification,
   completePatch,

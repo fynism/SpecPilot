@@ -1,6 +1,7 @@
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { buildSessionRuntime } from '../src/bootstrap.js';
 import type {
   ClarificationInput,
   ClarificationPresenter,
@@ -91,4 +92,9 @@ export function completePatch(service: SpecToolService): Record<string, unknown>
       },
     ],
   };
+}
+
+/** 旧单题契约的回归适配器；新 CLI 路径单独用默认组合根测试。 */
+export function buildLegacySessionRuntime(...args: Parameters<typeof buildSessionRuntime>) {
+  return buildSessionRuntime(args[0], args[1], args[2], args[3], args[4], args[5], 'single');
 }
