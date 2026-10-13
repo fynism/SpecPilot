@@ -20,10 +20,14 @@ import {
   temporaryManager,
 } from './helpers.js';
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  vi.restoreAllMocks();
+});
 type Screen = ReturnType<typeof render>;
 async function frame(screen: Screen, text: string): Promise<void> {
   await vi.waitFor(() => expect(screen.lastFrame()).toContain(text));
+  await new Promise<void>((resolve) => setImmediate(resolve));
 }
 async function type(screen: Screen, value: string): Promise<void> {
   screen.stdin.write(value);
@@ -32,6 +36,57 @@ async function type(screen: Screen, value: string): Promise<void> {
 const settings = { api_key: 'offline', model: 'fake', max_tool_use_turns: 20 };
 
 describe('Ink 澄清真实按键', () => {
+  it('回改已有组合答案保留选项与补充文字，取消不改写原答案', async () => {
+    const answers: ClarificationAnswer[] = [];
+    const original: ClarificationAnswer = {
+      request_id: 'Q-existing',
+      selected_option_id: 'expanded',
+      free_text: '只支持 CSV',
+      source: 'user',
+    };
+    const screen = render(
+      <ClarificationOverlay
+        locale="zh-CN"
+        request={{ ...clarification, request_id: original.request_id }}
+        initialAnswer={original}
+        onAnswer={(a) => answers.push(a)}
+        onCancel={() => undefined}
+      />,
+    );
+    await frame(screen, '只支持 CSV');
+    screen.stdin.write('\r');
+    await vi.waitFor(() => expect(answers).toEqual([original]));
+    screen.unmount();
+  });
+  it('窄屏分页查看完整问题时输入草稿不会丢失', async () => {
+    const answers: ClarificationAnswer[] = [];
+    const request = { ...clarification, request_id: 'Q-compact', reason: '原因说明'.repeat(30) };
+    const element = (
+      <ClarificationOverlay
+        locale="zh-CN"
+        request={request}
+        maxHeight={12}
+        onAnswer={(a) => answers.push(a)}
+        onCancel={() => undefined}
+      />
+    );
+    const screen = render(element);
+    vi.spyOn(screen.stdout, 'columns', 'get').mockReturnValue(36);
+    screen.rerender(element);
+    await frame(screen, '需要确认');
+    await type(screen, 'CSV');
+    screen.stdin.write('\u000f');
+    await frame(screen, 'PgUp/PgDn');
+    screen.stdin.write('\u001b[6~');
+    await frame(screen, '原因说明');
+    expect(screen.lastFrame()?.split('\n').length).toBeLessThanOrEqual(12);
+    screen.stdin.write('\u000f');
+    await frame(screen, '○ 管理员');
+    screen.stdin.write('\r');
+    await vi.waitFor(() => expect(answers).toHaveLength(1));
+    expect(answers[0]?.free_text).toBe('CSV');
+    screen.unmount();
+  });
   it('默认推荐只在 Enter 后成为答案', async () => {
     const answers: ClarificationAnswer[] = [];
     const screen = render(

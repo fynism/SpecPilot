@@ -1,5 +1,5 @@
 import { type Option, Select } from '@inkjs/ui';
-import { Box, Text, useInput } from 'ink';
+import { Box, Text, useInput, useStdout } from 'ink';
 import { useState } from 'react';
 import {
   answerSchema,
@@ -9,7 +9,7 @@ import {
 import type { SessionRecord } from '../../runtime/session/models.js';
 import { type Locale, translate } from './i18n.js';
 import { InputLine } from './input.js';
-import { safeTerminalText } from './text.js';
+import { safeTerminalText, terminalLines } from './text.js';
 
 /** UI Select 的 defaultValue 不控制光标且重复确认不发事件；用显式按键保证活动项可确认。 */
 function SelectionList({
@@ -51,48 +51,125 @@ export function ClarificationOverlay({
   locale,
   onAnswer,
   onCancel,
+  initialAnswer,
+  maxHeight,
 }: {
   request: ClarificationRequest;
   locale: Locale;
   onAnswer(answer: ClarificationAnswer): void;
   onCancel(): void;
+  initialAnswer?: ClarificationAnswer;
+  maxHeight?: number;
 }) {
   const recommended = request.options.findIndex((o) => o.id === request.recommended_option_id);
   const [highlight, setHighlight] = useState(recommended);
-  const [selected, setSelected] = useState<number | null>(recommended);
+  const initialIndex = initialAnswer
+    ? request.options.findIndex((o) => o.id === initialAnswer.selected_option_id)
+    : recommended;
+  const [selected, setSelected] = useState<number | null>(initialIndex < 0 ? null : initialIndex);
   const [error, setError] = useState('');
+  const { stdout } = useStdout();
+  const columns = 'columns' in stdout && typeof stdout.columns === 'number' ? stdout.columns : 80;
+  const [detailPage, setDetailPage] = useState<number | null>(null);
   const t = (key: Parameters<typeof translate>[1], values?: Record<string, string>) =>
     translate(locale, key, values);
+  const compact = maxHeight !== undefined;
+  const detailSize = Math.max(1, (maxHeight ?? 20) - 6);
+  const detailLines = terminalLines(
+    [
+      request.question,
+      request.reason,
+      ...request.options.map((o) => `${o.label}: ${o.description}`),
+      request.recommendation_reason,
+    ].join('\n'),
+    Math.max(8, columns - 8),
+  );
+  const visible = compact ? Math.max(1, (maxHeight ?? 20) - 8) : request.options.length;
+  const start = Math.min(
+    Math.max(0, highlight - visible + 1),
+    Math.max(0, request.options.length - visible),
+  );
   return (
     <Box flexDirection="column" borderStyle="round" borderColor="cyan" paddingX={1}>
-      <Text bold>{t('clarification.title', { question: safeTerminalText(request.question) })}</Text>
-      <Text dimColor>
-        {t('clarification.reason', { reason: safeTerminalText(request.reason) })}
+      <Text bold wrap={compact ? 'truncate-end' : 'wrap'}>
+        {t('clarification.title', { question: safeTerminalText(request.question) })}
       </Text>
-      {request.options.map((option, i) => (
-        <Box key={option.id} flexDirection="column">
-          <Text color={i === highlight ? 'cyan' : undefined}>
-            {i === highlight ? '❯' : ' '} {i === selected ? '●' : '○'}{' '}
-            {safeTerminalText(option.label)}
-            {option.id === request.recommended_option_id ? t('clarification.recommended') : ''}
+      {detailPage !== null ? (
+        <Text wrap="truncate-end">
+          {detailLines.slice(detailPage * detailSize, (detailPage + 1) * detailSize).join('\n')}
+        </Text>
+      ) : (
+        <>
+          <Text dimColor wrap={compact ? 'truncate-end' : 'wrap'}>
+            {t('clarification.reason', { reason: safeTerminalText(request.reason) })}
           </Text>
-          <Text dimColor> {safeTerminalText(option.description)}</Text>
-        </Box>
-      ))}
-      <Text dimColor>
-        {t('clarification.recommendation', {
-          reason: safeTerminalText(request.recommendation_reason),
-        })}
+          {request.options.slice(start, start + visible).map((option, offset) => {
+            const i = start + offset;
+            return (
+              <Box key={option.id} flexDirection="column">
+                <Text
+                  color={i === highlight ? 'cyan' : undefined}
+                  wrap={compact ? 'truncate-end' : 'wrap'}
+                >
+                  {i === highlight ? '❯' : ' '} {i === selected ? '●' : '○'}{' '}
+                  {safeTerminalText(option.label)}
+                  {option.id === request.recommended_option_id
+                    ? t('clarification.recommended')
+                    : ''}
+                </Text>
+                {!compact ? <Text dimColor> {safeTerminalText(option.description)}</Text> : null}
+              </Box>
+            );
+          })}
+          {compact ? (
+            <Text dimColor wrap="truncate-end">
+              {safeTerminalText(request.options[highlight]?.description ?? '')}
+            </Text>
+          ) : null}
+          {!compact ? (
+            <Text dimColor>
+              {t('clarification.recommendation', {
+                reason: safeTerminalText(request.recommendation_reason),
+              })}
+            </Text>
+          ) : null}
+        </>
+      )}
+      <Text dimColor wrap={compact ? 'truncate-end' : 'wrap'}>
+        {t(compact ? 'clarification.compact_help' : 'clarification.help')}
       </Text>
-      <Text dimColor>{t('clarification.help')}</Text>
+      {detailPage !== null ? (
+        <Text dimColor wrap="truncate-end">
+          {t('clarification.details_help')} · {detailPage + 1}/
+          {Math.ceil(detailLines.length / detailSize)}
+        </Text>
+      ) : null}
       {error ? <Text color="red">{error}</Text> : null}
       <InputLine
+        key="answer-input"
+        initialValue={initialAnswer?.free_text ?? ''}
         isReadOnly={!request.allow_custom_answer}
         onChange={() => {
           setSelected(null);
           setError('');
         }}
         onSpecial={(_value, input, key) => {
+          if (compact && key.ctrl && input === 'o') {
+            setDetailPage(detailPage === null ? 0 : null);
+            return true;
+          }
+          if (compact && (key.pageDown || key.pageUp)) {
+            setDetailPage(
+              Math.max(
+                0,
+                Math.min(
+                  Math.ceil(detailLines.length / detailSize) - 1,
+                  (detailPage ?? 0) + (key.pageDown ? 1 : -1),
+                ),
+              ),
+            );
+            return true;
+          }
           if (key.escape || (key.ctrl && ['c', 'd'].includes(input))) {
             onCancel();
             return true;

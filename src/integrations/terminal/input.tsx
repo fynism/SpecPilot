@@ -8,6 +8,7 @@ interface InputProps {
   onSpecial?(value: string, input: string, key: Key): boolean | string;
   isReadOnly?: boolean;
   history?: string[];
+  initialValue?: string;
 }
 
 /** 组合文字编辑与命令/澄清快捷键；UI 的 TextInput 不支持这些共享按键语义。 */
@@ -17,9 +18,10 @@ export function InputLine({
   onSpecial,
   isReadOnly = false,
   history = [],
+  initialValue = '',
 }: InputProps) {
-  const [value, setValue] = useState('');
-  const [cursor, setCursor] = useState(0);
+  const [value, setValue] = useState(initialValue);
+  const [cursor, setCursor] = useState(Array.from(initialValue).length);
   const [historyIndex, setHistoryIndex] = useState<number | null>(null);
   const [draft, setDraft] = useState('');
   const update = (next: string, nextCursor = Array.from(next).length) => {

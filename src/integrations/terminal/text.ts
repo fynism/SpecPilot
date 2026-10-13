@@ -24,3 +24,23 @@ export function readableTranscript(messages: Message[]): TranscriptEntry[] {
     return text ? [{ role: message.role, text: safeTerminalText(text, true) }] : [];
   });
 }
+/** 用保守列宽分行，便于窄终端分页查看完整的问题与历史文字。 */
+export function terminalLines(value: string, width: number): string[] {
+  const lines: string[] = [];
+  for (const raw of safeTerminalText(value).split('\n')) {
+    let line = '';
+    let columns = 0;
+    for (const char of raw) {
+      const size = (char.codePointAt(0) ?? 0) > 0x2e7f ? 2 : 1;
+      if (columns + size > Math.max(8, width)) {
+        lines.push(line);
+        line = '';
+        columns = 0;
+      }
+      line += char;
+      columns += size;
+    }
+    lines.push(line);
+  }
+  return lines;
+}
