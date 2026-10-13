@@ -220,6 +220,10 @@ export class ClarificationPlanService {
       throw new ClarificationPlanError('当前问题不允许自由输入');
     const old = plan.answers.filter((a) => a.question_id === q.id).at(-1);
     if (old && JSON.stringify(old.answer) === JSON.stringify(edit.answer)) return;
+    const revisingConfirmed =
+      q.status === 'resolved' ||
+      !!old?.submission_id ||
+      plan.review_entity_ids.some((id) => q.spec_entity_ids.includes(id));
     plan.answers.push({
       id: newId('ANSWER'),
       question_id: q.id,
@@ -237,11 +241,7 @@ export class ClarificationPlanService {
     }
     for (const candidate of plan.questions)
       if (affected.has(candidate.id)) {
-        if (
-          candidate.id !== q.id ||
-          candidate.status === 'resolved' ||
-          candidate.spec_entity_ids.length
-        ) {
+        if (revisingConfirmed || (candidate.id !== q.id && candidate.status === 'resolved')) {
           candidate.status = 'review_needed';
           plan.review_entity_ids.push(...candidate.spec_entity_ids);
         } else if (candidate.id === q.id) candidate.status = 'pending';

@@ -32,6 +32,24 @@ function ground(manager: SessionManager, id: string, decisionId = 'D-001') {
 }
 
 describe('多轮澄清领域状态', () => {
+  it('首次回答关联了草稿实体的问题，不把草稿目标误标为已确认结论的复核', () => {
+    const f = temporaryManager();
+    try {
+      f.manager.specTools.applySpecPatch({
+        expected_version: 1,
+        change_reason: '规划初始目标',
+        operations: [{ op: 'put_goal', id: 'G-001', statement: '导出业务数据' }],
+      });
+      const initial = initialRound();
+      required(initial.questions[0]).spec_entity_ids = ['G-001'];
+      f.manager.clarification.publish(initial);
+      answer(f.manager, 'users');
+      expect(f.manager.clarification.get().review_entity_ids).toEqual([]);
+      expect(f.manager.clarification.get().questions[0]?.status).toBe('pending');
+    } finally {
+      f.cleanup();
+    }
+  });
   it('旧草稿被新答案取代后不会阻止显式重试', () => {
     const f = temporaryManager();
     try {
