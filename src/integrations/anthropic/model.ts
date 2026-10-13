@@ -16,6 +16,7 @@ export class AnthropicModelClient implements ModelClient {
   constructor(
     private readonly settings: Settings,
     client?: Anthropic,
+    private readonly onUsage?: (usage: { input_tokens: number; output_tokens: number }) => void,
   ) {
     this.client =
       client ??
@@ -49,6 +50,7 @@ export class AnthropicModelClient implements ModelClient {
       ...(declarations.length ? { tools: declarations } : {}),
     });
     const normalized: ModelBlock[] = [];
+    if (this.onUsage) this.onUsage(response.usage);
     for (const block of response.content) {
       if (block.type === 'text')
         normalized.push(modelBlockSchema.parse({ type: 'text', text: block.text }));

@@ -358,7 +358,8 @@ describe('Anthropic 适配器离线协议', () => {
         );
       },
     });
-    const adapter = new AnthropicModelClient(settings, sdk);
+    const usages: { input_tokens: number; output_tokens: number }[] = [];
+    const adapter = new AnthropicModelClient(settings, sdk, (usage) => usages.push(usage));
     const messages: Message[] = [{ role: 'user', content: '问题' }];
     expect(await adapter.createMessage(messages, [], '系统', 8000)).toEqual([
       { type: 'text', text: '回答' },
@@ -374,5 +375,9 @@ describe('Anthropic 适配器离线协议', () => {
     );
     await adapter.createMessage(messages, registry.toolSpecs(), '系统', 8000);
     expect(JSON.stringify(bodies[1]?.tools)).toContain('additionalProperties');
+    expect(usages).toEqual([
+      { input_tokens: 1, output_tokens: 1 },
+      { input_tokens: 1, output_tokens: 1 },
+    ]);
   });
 });
