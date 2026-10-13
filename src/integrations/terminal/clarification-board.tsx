@@ -184,10 +184,38 @@ export function ClarificationBoard({
   const pageSize = Math.max(1, height - 12);
   const page = Math.floor(Math.max(0, index) / pageSize);
   const answers = question ? plan.answers.filter((a) => a.question_id === question.id) : [];
+  const latest = answers.at(-1);
+  const originalQuestion = (revision: typeof latest) =>
+    revision
+      ? plan.question_history.find(
+          (q) => q.id === revision.question_id && q.version === revision.question_version,
+        )
+      : undefined;
+  const optionLabel = (revision: typeof latest) =>
+    originalQuestion(revision)?.input?.options.find(
+      (o) => o.id === revision?.answer.selected_option_id,
+    )?.label ??
+    revision?.answer.selected_option_id ??
+    '';
+  const spec = manager.currentSpec();
+  const facts =
+    question?.status === 'resolved'
+      ? [
+          ...spec.goals,
+          ...spec.scope,
+          ...spec.decisions,
+          ...spec.requirements,
+          ...spec.assumptions,
+          ...spec.acceptance_criteria,
+        ]
+          .filter((e) => e.lifecycle === 'active' && question.spec_entity_ids.includes(e.id))
+          .map((e) => e.statement)
+          .join('\n')
+      : '';
   const resolved = plan.questions.filter((q) => q.status === 'resolved').length;
   if (history) {
     const revision = answers[historyIndex];
-    const lines = terminalLines(revision?.answer.free_text ?? '', Math.max(8, columns - 6));
+    const lines = terminalLines(revision?.answer.free_text ?? facts, Math.max(8, columns - 6));
     const size = Math.max(1, height - 6);
     const page = Math.min(historyPage, Math.max(0, Math.ceil(lines.length / size) - 1));
     return (
@@ -195,22 +223,29 @@ export function ClarificationBoard({
         <Text bold>
           {t('board.history')} · {historyIndex + 1}/{Math.max(1, answers.length)}
         </Text>
-        <Text wrap="truncate-end">{safeTerminalText(question?.statement ?? '')}</Text>
+        <Text wrap="truncate-end">
+          {safeTerminalText(
+            originalQuestion(revision)?.input?.question ?? question?.statement ?? '',
+          )}
+        </Text>
         {revision ? (
           <>
             <Text>
               {revision.submission_id ? t('board.submitted') : t('board.draft')} ·{' '}
               {revision.created_at}
             </Text>
-            <Text wrap="truncate-end">
-              {safeTerminalText(revision.answer.selected_option_id ?? '')}
-            </Text>
+            <Text wrap="truncate-end">{safeTerminalText(optionLabel(revision))}</Text>
             <Text wrap="truncate-end">
               {lines.slice(page * size, (page + 1) * size).join('\n')}
             </Text>
           </>
         ) : (
-          <Text>{t('board.no_history')}</Text>
+          <>
+            <Text>{t('board.no_history')}</Text>
+            <Text wrap="truncate-end">
+              {lines.slice(page * size, (page + 1) * size).join('\n')}
+            </Text>
+          </>
         )}
         <Text dimColor>{t('board.history_help')}</Text>
       </Box>
@@ -253,9 +288,13 @@ export function ClarificationBoard({
       ) : null}
       {question && latestAnswer(plan, question.id) ? (
         <Text dimColor wrap="truncate-end">
-          {t('board.answer')}:{' '}
-          {safeTerminalText(latestAnswer(plan, question.id)?.selected_option_id ?? '')}{' '}
+          {t('board.answer')}: {safeTerminalText(optionLabel(latest))}{' '}
           {safeTerminalText(latestAnswer(plan, question.id)?.free_text ?? '')}
+        </Text>
+      ) : null}
+      {facts ? (
+        <Text dimColor wrap="truncate-end">
+          {t('board.current_facts')}: {safeTerminalText(facts.replaceAll('\n', '；'))}
         </Text>
       ) : null}
       {note ? (

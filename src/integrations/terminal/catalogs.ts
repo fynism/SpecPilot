@@ -1,6 +1,7 @@
 /** 只用于界面固定文案，不翻译历史、Spec 或 Prompt。 */
 export const catalogs = {
   'zh-CN': {
+    'board.current_facts': '当前 Spec 结论',
     'clarification.compact_help': '↑↓ 选择 · Tab 选中 · Enter 确认 · Ctrl+O 详情',
     'clarification.details_help': 'PgUp/PgDn 翻页 · Ctrl+O 返回选项 · Esc 取消',
     'board.history': '答案修订历史',
@@ -81,6 +82,7 @@ export const catalogs = {
     'command.quit.description': '退出 SpecPilot',
   },
   'en-US': {
+    'board.current_facts': 'Current Spec conclusions',
     'clarification.compact_help': '↑↓ select · Tab mark · Enter save · Ctrl+O details',
     'clarification.details_help': 'PgUp/PgDn page · Ctrl+O options · Esc cancel',
     'board.history': 'Answer revisions',

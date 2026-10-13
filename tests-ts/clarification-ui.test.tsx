@@ -80,6 +80,7 @@ describe('多轮清单实际按键', () => {
       expect(client.exposedTools).toHaveLength(1);
       screen.stdin.write('h');
       await frame(screen, '答案修订历史');
+      await frame(screen, '管理员');
       screen.stdin.write('\u001b');
       await frame(screen, '澄清总览');
       screen.stdin.write('\u001b[A');
