@@ -1,5 +1,5 @@
 import { Box, Text, useInput, useStdout } from 'ink';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   latestAnswer,
   questionRequest,
@@ -45,6 +45,14 @@ export function ClarificationBoard({
   const columns = 'columns' in stdout && typeof stdout.columns === 'number' ? stdout.columns : 80;
   const [error, setError] = useState('');
   const [collapsed, setCollapsed] = useState<string[]>([]);
+  useEffect(() => {
+    if (round?.id) {
+      setIndex(0);
+      setAll(false);
+      setHistory(false);
+      setEditing(null);
+    }
+  }, [round?.id]);
   const t = (key: Parameters<typeof translate>[1], values?: Record<string, string | number>) =>
     translate(locale, key, values);
   const rows = all

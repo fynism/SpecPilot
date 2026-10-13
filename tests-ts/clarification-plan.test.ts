@@ -3,16 +3,17 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { LocalSessionStore } from '../src/integrations/filesystem/session-store.js';
 import type { SessionManager } from '../src/runtime/session/manager.js';
-import { temporaryManager } from './helpers.js';
+import { required, temporaryManager } from './helpers.js';
 import { answer, currentPatch, initialRound } from './round-helpers.js';
 
 function ground(manager: SessionManager, id: string, decisionId = 'D-001') {
   const a = manager.clarification
     .get()
     .answers.filter((a) => a.question_id === id)
-    .at(-1)!;
+    .at(-1);
+  if (!a) throw new Error('缺少答案');
   const spec = manager.currentSpec();
-  const evidence = spec.evidence.find((e) => e.locator === `clarification:${a.id}`)!;
+  const evidence = required(spec.evidence.find((e) => e.locator === `clarification:${a.id}`));
   manager.specTools.applySpecPatch({
     expected_version: spec.version,
     change_reason: '记录用户确认',
@@ -31,6 +32,49 @@ function ground(manager: SessionManager, id: string, decisionId = 'D-001') {
 }
 
 describe('多轮澄清领域状态', () => {
+  it('旧草稿被新答案取代后不会阻止显式重试', () => {
+    const f = temporaryManager();
+    try {
+      f.manager.clarification.publish(initialRound());
+      answer(f.manager, 'users', '旧草稿');
+      answer(f.manager, 'users', '更正后的草稿');
+      f.manager.submitClarification('submit_one');
+      f.manager.beginTurn('处理答案');
+      f.manager.interruptTurn();
+      const retry = JSON.parse(f.manager.retryClarification());
+      expect(retry.answers).toHaveLength(1);
+      expect(retry.answers[0].answer.free_text).toBe('更正后的草稿');
+    } finally {
+      f.cleanup();
+    }
+  });
+  it('不适用事项保留草稿历史，但不能再被提交或阻塞准备检查', () => {
+    const f = temporaryManager();
+    try {
+      f.manager.clarification.publish(initialRound());
+      answer(f.manager, 'files');
+      const patch = currentPatch(f.manager);
+      patch.topics = patch.topics.map((t) => ({ ...t, needs_detail: false }));
+      const files = patch.questions.find((q) => q.id === 'files');
+      if (!files) throw new Error('缺少问题');
+      files.status = 'inactive';
+      files.change_reason = '当前需求不包含此分支';
+      f.manager.clarification.publish(patch);
+      expect(
+        f.manager.clarification
+          .validationIssues()
+          .some((issue) => issue.entity_id === 'clarification_plan'),
+      ).toBe(false);
+      const submission = f.manager.submitClarification('note_only', '新的需求说明');
+      if (!submission) throw new Error('缺少提交');
+      expect(JSON.parse(submission).answers).toEqual([]);
+      expect(f.manager.clarification.get().questions.find((q) => q.id === 'files')?.status).toBe(
+        'inactive',
+      );
+    } finally {
+      f.cleanup();
+    }
+  });
   it('问题选项变化后保留旧版本，历史回答仍指向原来展示的选项', () => {
     const f = temporaryManager();
     try {
@@ -59,8 +103,8 @@ describe('多轮澄清领域状态', () => {
     try {
       const initial = initialRound();
       const cycle = structuredClone(initial);
-      cycle.questions[0]!.depends_on = ['files'];
-      cycle.questions[1]!.depends_on = ['users'];
+      required(cycle.questions[0]).depends_on = ['files'];
+      required(cycle.questions[1]).depends_on = ['users'];
       expect(() => f.manager.clarification.publish(cycle)).toThrow();
       expect(f.manager.clarification.get().version).toBe(0);
       expect(() =>
@@ -88,7 +132,7 @@ describe('多轮澄清领域状态', () => {
       expect(
         new LocalSessionStore(f.root).load(f.manager.current.session_id).clarification_plan.answers,
       ).toHaveLength(1);
-      const query = f.manager.submitClarification('submit_one')!;
+      const query = required(f.manager.submitClarification('submit_one'));
       expect(JSON.parse(query).answers[0].answer).toMatchObject({
         selected_option_id: 'recommended',
         free_text: '仅供管理员使用',
@@ -126,7 +170,7 @@ describe('多轮澄清领域状态', () => {
         'Session',
       );
       const patch = currentPatch(f.manager);
-      patch.questions[0]!.statement = '改变问题范围';
+      required(patch.questions[0]).statement = '改变问题范围';
       f.manager.clarification.publish(patch);
       expect(() => f.manager.submitClarification('submit_one')).toThrow('过期');
       expect(() => f.manager.editClarification(valid)).toThrow('改变');
@@ -139,16 +183,16 @@ describe('多轮澄清领域状态', () => {
     try {
       f.manager.clarification.publish(initialRound());
       const fake = currentPatch(f.manager);
-      fake.questions[0]!.status = 'resolved';
+      required(fake.questions[0]).status = 'resolved';
       expect(() => f.manager.clarification.publish(fake)).toThrow('证据');
       answer(f.manager, 'users');
       f.manager.submitClarification('submit_one');
       f.manager.beginTurn('处理提交');
       ground(f.manager, 'users');
       const patch = currentPatch(f.manager);
-      patch.questions[0]!.status = 'resolved';
-      patch.questions[0]!.spec_entity_ids = ['D-001'];
-      patch.questions[1]!.depends_on = ['users'];
+      required(patch.questions[0]).status = 'resolved';
+      required(patch.questions[0]).spec_entity_ids = ['D-001'];
+      required(patch.questions[1]).depends_on = ['users'];
       f.manager.clarification.publish(patch);
       f.manager.completeTurn();
       answer(f.manager, 'users', '所有用户都可以');

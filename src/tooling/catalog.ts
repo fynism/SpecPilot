@@ -4,6 +4,7 @@ import {
   clarificationInputSchema,
 } from '../capabilities/clarification/models.js';
 import {
+  ClarificationPlanError,
   type ClarificationPlanService,
   publishRoundSchema,
 } from '../capabilities/clarification/plan.js';
@@ -58,7 +59,18 @@ export function buildDefaultRegistry(
       'publish_clarification_round',
       '按预期版本更新完整总览并发布最多五个本轮问题，默认三个；保留所有旧 ID。此工具不会等待用户，成功后立即结束本轮，必须最后调用。解决问题必须关联真实证据；不得把推荐当作回答。',
       publishRoundSchema,
-      (i) => plan.publish(i),
+      (i) => {
+        try {
+          return plan.publish(i);
+        } catch (error) {
+          if (!(error instanceof ClarificationPlanError)) throw error;
+          return JSON.stringify({
+            status: 'error',
+            code: 'invalid_clarification_plan',
+            message: error.message,
+          });
+        }
+      },
     );
   } else {
     const clarification = new ClarificationService(presenter, dispatch);

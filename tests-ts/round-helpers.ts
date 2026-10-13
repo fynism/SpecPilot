@@ -1,7 +1,7 @@
 import type { PublishRound } from '../src/capabilities/clarification/plan.js';
 import { questionRequest } from '../src/capabilities/clarification/plan.js';
 import type { SessionManager } from '../src/runtime/session/manager.js';
-import { clarification } from './helpers.js';
+import { clarification, required } from './helpers.js';
 
 export const initialRound = (): PublishRound => ({
   expected_version: 0,
@@ -38,7 +38,7 @@ export function currentPatch(manager: SessionManager): PublishRound {
   };
 }
 export function answer(manager: SessionManager, id: string, freeText = '仅供管理员使用'): void {
-  const q = manager.clarification.get().questions.find((q) => q.id === id)!;
+  const q = required(manager.clarification.get().questions.find((q) => q.id === id));
   manager.editClarification({
     session_id: manager.current.session_id,
     question_id: id,

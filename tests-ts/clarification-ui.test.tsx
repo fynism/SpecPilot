@@ -6,7 +6,7 @@ import { questionRequest } from '../src/capabilities/clarification/plan.js';
 import { TerminalApp } from '../src/integrations/terminal/app.js';
 import { runConsole } from '../src/integrations/terminal/console.js';
 import type { ModelBlock } from '../src/runtime/model.js';
-import { call, clarification, ScriptedClient, temporaryManager } from './helpers.js';
+import { call, clarification, required, ScriptedClient, temporaryManager } from './helpers.js';
 
 afterEach(cleanup);
 const settings = { api_key: 'offline', model: 'fake', max_tool_use_turns: 20 };
@@ -139,7 +139,7 @@ describe('多轮清单实际按键', () => {
     const f = temporaryManager();
     try {
       f.manager.clarification.publish(round());
-      const q = f.manager.clarification.get().questions[0]!;
+      const q = required(f.manager.clarification.get().questions[0]);
       f.manager.editClarification({
         session_id: f.manager.current.session_id,
         question_id: q.id,

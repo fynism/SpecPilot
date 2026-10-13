@@ -3,7 +3,13 @@ import { buildSessionRuntime } from '../src/bootstrap.js';
 import { LocalSessionStore } from '../src/integrations/filesystem/session-store.js';
 import { SessionManager } from '../src/runtime/session/manager.js';
 import { runSessionTurn } from '../src/runtime/turn.js';
-import { call, recommendedPresenter, ScriptedClient, temporaryManager } from './helpers.js';
+import {
+  call,
+  recommendedPresenter,
+  required,
+  ScriptedClient,
+  temporaryManager,
+} from './helpers.js';
 import { answer, initialRound } from './round-helpers.js';
 
 const settings = { api_key: 'offline', model: 'fake', max_tool_use_turns: 20 };
@@ -31,8 +37,10 @@ describe('默认 Runtime 多轮边界', () => {
         await runSessionTurn(f.manager, runtime(f.manager, f.root, client), '做文件上传'),
       ).toBe('clarification_round_ready');
       expect(client.exposedTools).toHaveLength(1);
-      expect(client.exposedTools[0]!.map((t) => t.name)).not.toContain('request_clarification');
-      const last = f.manager.messages.at(-1)!.content;
+      expect(required(client.exposedTools[0]).map((t) => t.name)).not.toContain(
+        'request_clarification',
+      );
+      const last = required(f.manager.messages.at(-1)).content;
       expect(last).toMatchObject([
         { tool_use_id: 'publish' },
         { tool_use_id: 'later', content: expect.stringContaining('拒绝') },
@@ -49,7 +57,7 @@ describe('默认 Runtime 多轮边界', () => {
     try {
       f.manager.clarification.publish(initialRound());
       answer(f.manager, 'users');
-      const query = f.manager.submitClarification('submit_one')!;
+      const query = required(f.manager.submitClarification('submit_one'));
       const client = new ScriptedClient([[call('get', 'get_spec')]]);
       await expect(
         runSessionTurn(f.manager, runtime(f.manager, f.root, client), query),
@@ -90,6 +98,12 @@ describe('默认 Runtime 多轮边界', () => {
       expect(await runSessionTurn(f.manager, runtime(f.manager, f.root, invalid), '继续')).toBe(
         'model_complete',
       );
+      const failed = f.manager.messages
+        .flatMap((m) => (typeof m.content === 'string' ? [] : m.content))
+        .find((block) => block.type === 'tool_result' && block.tool_use_id === 'bad');
+      expect(failed).toMatchObject({
+        content: expect.stringContaining('invalid_clarification_plan'),
+      });
     } finally {
       f.cleanup();
     }

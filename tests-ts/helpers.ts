@@ -98,3 +98,9 @@ export function completePatch(service: SpecToolService): Record<string, unknown>
 export function buildLegacySessionRuntime(...args: Parameters<typeof buildSessionRuntime>) {
   return buildSessionRuntime(args[0], args[1], args[2], args[3], args[4], args[5], 'single');
 }
+
+/** 测试 fixture 前置条件必须在运行时成立，不能用非空断言掩盖缺失。 */
+export function required<T>(value: T | null | undefined): T {
+  if (value === null || value === undefined) throw new Error('测试缺少必要 fixture');
+  return value;
+}
