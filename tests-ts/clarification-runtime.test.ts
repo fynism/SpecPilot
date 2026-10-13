@@ -24,6 +24,30 @@ function runtime(manager: SessionManager, root: string, client: ScriptedClient) 
   );
 }
 describe('默认 Runtime 多轮边界', () => {
+  it('待批准状态被拒绝时返回可恢复错误，不丢弃原 Spec', async () => {
+    const f = temporaryManager();
+    try {
+      f.manager.clarification.publish(initialRound());
+      const client = new ScriptedClient([
+        [
+          call('premature', 'apply_spec_patch', {
+            expected_version: 1,
+            change_reason: '仍有待决事项',
+            operations: [{ op: 'set_spec_metadata', status: 'ready_for_approval' }],
+          }),
+        ],
+        [{ type: 'text', text: '保留未决问题，先更新事实' }],
+      ]);
+      await runSessionTurn(f.manager, runtime(f.manager, f.root, client), '继续澄清');
+      const result = f.manager.messages
+        .flatMap((m) => (typeof m.content === 'string' ? [] : m.content))
+        .find((b) => b.type === 'tool_result' && b.tool_use_id === 'premature');
+      expect(result).toMatchObject({ content: expect.stringContaining('clarification_pending') });
+      expect(f.manager.currentSpec().version).toBe(1);
+    } finally {
+      f.cleanup();
+    }
+  });
   it('发布立即返回，同批后续调用配对拒绝；默认不暴露阻塞单题工具', async () => {
     const f = temporaryManager();
     try {

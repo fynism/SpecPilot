@@ -16,7 +16,11 @@ import {
   searchInputSchema,
 } from '../capabilities/repository/tool.js';
 import { SpecExporter } from '../capabilities/spec/export.js';
-import { patchSchema, type SpecToolService } from '../capabilities/spec/operations.js';
+import {
+  patchSchema,
+  SpecMutationError,
+  type SpecToolService,
+} from '../capabilities/spec/operations.js';
 import type { HookDispatcher } from './contracts.js';
 import { ToolRegistry } from './registry.js';
 
@@ -87,9 +91,16 @@ export function buildDefaultRegistry(
   );
   registry.register(
     'apply_spec_patch',
-    '通过一组带类型的语义操作原子更新当前 Specification；必须先用 get_spec 取得 expected_version，不能物理删除历史实体。',
+    '通过语义操作原子更新 Specification；先 get_spec 取得 expected_version。不能物理删除历史实体或改写 Evidence。真实澄清提交已有宿主证据，按 locator 引用其 Evidence ID，不必重新 record_evidence。',
     patchSchema,
-    (i) => spec.applySpecPatch(i),
+    (i) => {
+      try {
+        return spec.applySpecPatch(i);
+      } catch (error) {
+        if (!(error instanceof SpecMutationError)) throw error;
+        return JSON.stringify({ status: 'error', code: error.code, message: error.message });
+      }
+    },
   );
   registry.register(
     'validate_spec',

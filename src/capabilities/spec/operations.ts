@@ -54,6 +54,16 @@ export const patchSchema = z.strictObject({
 });
 export type SpecPatch = z.infer<typeof patchSchema>;
 
+/** 固定领域错误可返回模型；外部异常仍由 Executor 脱敏。 */
+export class SpecMutationError extends Error {
+  constructor(
+    readonly code: 'version_conflict' | 'immutable_evidence' | 'clarification_pending',
+    message: string,
+  ) {
+    super(message);
+  }
+}
+
 /** Spec 修改入口；整批操作完成后校验并一次追加版本。 */
 export class SpecToolService {
   constructor(
@@ -83,7 +93,8 @@ export class SpecToolService {
   applySpecPatch(input: SpecPatch): string {
     const patch = patchSchema.parse(input);
     const working = this.currentSpec();
-    if (working.version !== patch.expected_version) throw new Error('Spec 版本冲突');
+    if (working.version !== patch.expected_version)
+      throw new SpecMutationError('version_conflict', 'Spec 版本冲突，请重新 get_spec');
     working.change_reason = patch.change_reason;
     for (const operation of patch.operations) {
       if (operation.op === 'set_spec_metadata') {
@@ -105,7 +116,10 @@ export class SpecToolService {
               existing.kind !== operation.kind ||
               existing.locator !== operation.locator)
           )
-            throw new Error('Evidence 不可改写，必须添加新的证据');
+            throw new SpecMutationError(
+              'immutable_evidence',
+              'Evidence 不可改写；真实澄清提交已有宿主证据，请按 locator 引用现有 Evidence ID',
+            );
         }
         const mapping = {
           put_goal: 'goals',
@@ -135,7 +149,10 @@ export class SpecToolService {
       candidate.status === 'ready_for_approval' &&
       this.additionalIssues().some((i) => i.severity === 'error')
     )
-      throw new Error('存在未完成的澄清事项，不能进入待批准状态');
+      throw new SpecMutationError(
+        'clarification_pending',
+        '存在未完成的澄清事项，不能进入待批准状态；请先只提交事实，随后发布问题状态',
+      );
     return JSON.stringify(this.store.save(candidate, patch.expected_version));
   }
 }

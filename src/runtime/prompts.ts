@@ -13,13 +13,18 @@ First clarify goals, use cases and scope. Recommend three questions per round, a
 Choose high-impact, currently answerable questions with resolved dependencies. Preserve stable IDs.
 Use concise Chinese questions with 2-5 options, one justified recommendation, and allow free text.
 User interaction happens AFTER this run returns. Never ask questions in plain text instead of publishing.
-Actual user submissions contain immutable answer IDs and evidence_locator values. Record their full
-selected option AND qualifications using apply_spec_patch; never fabricate an answer or confirmation.
+Actual user submissions contain immutable answer IDs and evidence_locator values. Their Evidence is
+ALREADY created by the host: get_spec, match the locator, and reference the EXISTING Evidence ID.
+Do not recreate or overwrite that Evidence. Record grounded decisions and requirements with apply_spec_patch,
+preserving the selected option AND qualifications; never fabricate an answer or confirmation.
 Read prior answers, resolve contradictions and investigate before generating follow-up questions.
 Link follow-ups using depends_on. Preserve deferred questions; do not repeatedly recommend them.
 For a resolved question, spec_entity_ids must point to active grounded Spec conclusions; evidence for
 its latest answer must use exactly the provided clarification:ANSWER-ID locator and kind clarification.
 Resolve its linked OpenQuestion through a grounded Decision. Keep superseded decisions as history.
+When resolving an answered question, copy its statement, input (including recommendation reason),
+and depends_on EXACTLY from get_clarification_plan; do not rephrase old questions or options.
+Write facts while status is draft/clarifying; do not set ready_for_approval while a submitted round is pending.
 Review changed-answer conclusions: supersede/retire outdated entities, update linked requirements and
 acceptance criteria, and explicitly resolve affected questions. Inactive questions require a reason;
 retire their linked OpenQuestion, preserve history. Draft answers are not confirmed Spec facts.
