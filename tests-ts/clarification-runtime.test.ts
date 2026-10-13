@@ -94,4 +94,18 @@ describe('默认 Runtime 多轮边界', () => {
       f.cleanup();
     }
   });
+  it('已提交但尚未运行时选择结束，最终总结不能补写 Spec 证据', async () => {
+    const f = temporaryManager();
+    try {
+      f.manager.clarification.publish(initialRound());
+      answer(f.manager, 'users');
+      f.manager.submitClarification('submit_one');
+      const before = f.manager.currentSpec();
+      const client = new ScriptedClient([[{ type: 'text', text: '已提交但尚未处理的事项保留' }]]);
+      await runSessionTurn(f.manager, runtime(f.manager, f.root, client), '/done');
+      expect(f.manager.currentSpec()).toEqual(before);
+    } finally {
+      f.cleanup();
+    }
+  });
 });

@@ -44,6 +44,7 @@ export const planSchema = z
     draft_note: z.string().max(2000).default(''),
     topics: z.array(topicSchema).max(50),
     questions: z.array(questionSchema).max(200),
+    question_history: z.array(questionSchema).default([]),
     rounds: z.array(
       z.strictObject({
         id: clarificationIdSchema,
@@ -61,6 +62,11 @@ export const planSchema = z
     for (const items of [plan.topics, plan.questions, plan.rounds, plan.answers, plan.submissions])
       if (!unique(items.map((i) => i.id))) fail('澄清实体 ID 必须唯一');
     const questions = new Map(plan.questions.map((q) => [q.id, q]));
+    if (!unique(plan.question_history.map((q) => `${q.id}:${q.version}`)))
+      fail('问题版本历史必须唯一');
+    for (const q of plan.question_history)
+      if (!questions.has(q.id) || q.version > (questions.get(q.id)?.version ?? 0))
+        fail('问题历史版本引用无效');
     for (const q of plan.questions) {
       if (!plan.topics.some((t) => t.id === q.topic_id)) fail('问题引用不存在的主题');
       if (!unique(q.depends_on) || q.depends_on.some((id) => !questions.has(id)))
@@ -107,6 +113,7 @@ export const emptyPlan = (): ClarificationPlan =>
     draft_note: '',
     topics: [],
     questions: [],
+    question_history: [],
     rounds: [],
     answers: [],
     submissions: [],

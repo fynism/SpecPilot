@@ -184,6 +184,9 @@ export class ClarificationPlanService {
       question_ids: patch.question_ids,
       summary: patch.summary,
     });
+    for (const q of plan.questions)
+      if (!plan.question_history.some((old) => old.id === q.id && old.version === q.version))
+        plan.question_history.push(structuredClone(q));
     this.save(plan);
     this.published();
     return JSON.stringify({
@@ -284,7 +287,17 @@ export class ClarificationPlanService {
         .filter((a) => submission.answer_ids.includes(a.id))
         .map((a) => ({
           ...a,
-          question: this.question(plan, a.question_id).statement,
+          question: (
+            plan.question_history.find(
+              (q) => q.id === a.question_id && q.version === a.question_version,
+            ) ?? this.question(plan, a.question_id)
+          ).statement,
+          displayed_options:
+            (
+              plan.question_history.find(
+                (q) => q.id === a.question_id && q.version === a.question_version,
+              ) ?? this.question(plan, a.question_id)
+            ).input?.options ?? [],
           evidence_locator: `clarification:${a.id}`,
         })),
     });
@@ -370,6 +383,7 @@ export function planFromSpec(spec: Specification): ClarificationPlan {
     status: q.status === 'resolved' ? 'resolved' : 'pending',
     change_reason: '从 v1 Session 导入',
   }));
+  plan.question_history = structuredClone(plan.questions);
   return planSchema.parse(plan);
 }
 

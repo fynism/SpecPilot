@@ -1,4 +1,5 @@
 import { ClarificationPlanService } from '../../capabilities/clarification/plan.js';
+import { isClarificationStopRequest } from '../../capabilities/clarification/policy.js';
 import { type Clock, newId, type Specification, utcNow } from '../../capabilities/spec/models.js';
 import { SpecToolService } from '../../capabilities/spec/operations.js';
 import { InMemorySpecStore } from '../../capabilities/spec/store.js';
@@ -128,9 +129,12 @@ export class SessionManager {
       throw new Error('当前状态不能开始新轮次');
     // 已提交答案的证据由宿主创建，模型只能引用；草稿不进入 Spec。
     const spec = this.currentSpec();
-    const answers = session.clarification_plan.answers.filter(
-      (a) => a.submission_id && !spec.evidence.some((e) => e.locator === `clarification:${a.id}`),
-    );
+    const answers = isClarificationStopRequest(request)
+      ? []
+      : session.clarification_plan.answers.filter(
+          (a) =>
+            a.submission_id && !spec.evidence.some((e) => e.locator === `clarification:${a.id}`),
+        );
     if (answers.length) {
       let next = Math.max(0, ...spec.evidence.map((e) => Number(e.id.slice(2))));
       for (let offset = 0; offset < answers.length; offset += 20) {

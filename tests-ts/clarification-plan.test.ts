@@ -31,6 +31,29 @@ function ground(manager: SessionManager, id: string, decisionId = 'D-001') {
 }
 
 describe('多轮澄清领域状态', () => {
+  it('问题选项变化后保留旧版本，历史回答仍指向原来展示的选项', () => {
+    const f = temporaryManager();
+    try {
+      f.manager.clarification.publish(initialRound());
+      answer(f.manager, 'users');
+      const patch = currentPatch(f.manager);
+      const question = patch.questions[0];
+      if (!question?.input) throw new Error('缺少问题');
+      question.input = {
+        ...question.input,
+        options: question.input.options.map((o) => ({ ...o, label: '新的方向' })),
+      };
+      f.manager.clarification.publish(patch);
+      const plan = f.manager.clarification.get();
+      expect(
+        plan.question_history.find((q) => q.id === 'users' && q.version === 1)?.input?.options[0]
+          ?.label,
+      ).toBe('管理员');
+      expect(plan.questions[0]?.input?.options[0]?.label).toBe('新的方向');
+    } finally {
+      f.cleanup();
+    }
+  });
   it('版本、依赖环、无效引用与每轮上限被拒绝，失败不修改旧总览', () => {
     const f = temporaryManager();
     try {
