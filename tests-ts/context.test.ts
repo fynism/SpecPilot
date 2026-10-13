@@ -17,7 +17,7 @@ import { HookRegistry } from '../src/runtime/hooks.js';
 import { ContextLimitError, type Message, type ModelClient } from '../src/runtime/model.js';
 import { SessionManager } from '../src/runtime/session/manager.js';
 import { sessionSchema } from '../src/runtime/session/models.js';
-import { runSessionTurn } from '../src/runtime/turn.js';
+import { compactSession, runSessionTurn } from '../src/runtime/turn.js';
 import { ToolExecutor } from '../src/tooling/executor.js';
 import { ToolRegistry } from '../src/tooling/registry.js';
 import {
@@ -62,6 +62,56 @@ function contextFixture(client: ModelClient, window = 500_000) {
 }
 
 describe('上下文压缩确定性边界与离线场景 Eval', () => {
+  it('手动压缩拒绝运行中轮次，无历史时不调用模型', async () => {
+    const fixture = temporaryManager();
+    try {
+      const createMessage = vi.fn(async () => text('摘要'));
+      const runtime = buildSessionRuntime(
+        fixture.manager,
+        fixture.root,
+        settings,
+        recommendedPresenter,
+        () => undefined,
+        { createMessage },
+      );
+      expect(await compactSession(fixture.manager, runtime)).toBe(false);
+      fixture.manager.beginTurn('运行中请求');
+      await expect(compactSession(fixture.manager, runtime)).rejects.toThrow('运行中');
+      expect(createMessage).not.toHaveBeenCalled();
+    } finally {
+      fixture.cleanup();
+    }
+  });
+  it('手动摘要保存失败保持原始快照，后续可重试', async () => {
+    const fixture = temporaryManager();
+    try {
+      const store = new LocalSessionStore(fixture.root);
+      const manager = new SessionManager(store);
+      manager.start();
+      manager.beginTurn('旧请求');
+      manager.messages.push(...history());
+      manager.completeTurn();
+      const original = manager.current;
+      const runtime = buildSessionRuntime(
+        manager,
+        fixture.root,
+        settings,
+        recommendedPresenter,
+        () => undefined,
+        new ScriptedClient([text('短摘要'), text('重试短摘要')]),
+      );
+      const save = vi.spyOn(store, 'save').mockImplementationOnce(() => {
+        throw new Error('写入失败');
+      });
+      await expect(compactSession(manager, runtime)).rejects.toThrow('写入失败');
+      expect(manager.current).toEqual(original);
+      expect(store.load(original.session_id)).toEqual(original);
+      expect(await compactSession(manager, runtime)).toBe(true);
+      save.mockRestore();
+    } finally {
+      fixture.cleanup();
+    }
+  });
   it('500k 窗口包含系统提示与工具 Schema，UTF-8 中文与工具输出计入估算', () => {
     const tool = {
       name: 'example',

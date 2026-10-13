@@ -57,6 +57,7 @@ npm registry；以上打包和安装都可以在本地完成。
 /switch [session-id]   无参数时选择，传完整 ID 时直接切换
 /rename <标题>        重命名当前 Session
 /status               显示当前 Session 和 Spec 状态
+/compact              手动压缩当前上下文，保留原始历史
 /done                 结束澄清，只总结已有信息
 /language [zh-CN|en-US] 切换全屏界面语言
 /quit                 退出
@@ -65,6 +66,16 @@ npm registry；以上打包和安装都可以在本地完成。
 全屏界面支持斜杠命令提示、Tab 补全、输入历史、PgUp/PgDn 翻阅对话、Ctrl+Home 跳到开头、
 Ctrl+End 恢复跟随最新消息，以及 Ctrl+Q 退出。用户和 Agent 按结构化角色显示不同颜色。
 Session 选择每页 10 项，PgUp/PgDn 或 p/n 翻页，Enter 明确确认，Esc 取消。
+
+底部实时显示当前上下文已用 Token、暂定 **500,000 tokens** 窗口和使用百分比。用量包含
+消息、系统提示和工具声明，采用 UTF-8 字节估算，界面明确标注“估算”，不是计费统计。
+发送前预留 8,000 tokens 输出预算；接近窗口上限时自动压缩，供应商明确返回 context limit
+时压缩并重试一次。可在等待输入时用 `/compact` 手动压缩，运行中不能并发执行该命令。
+
+基础策略用当前模型摘要旧历史，保留最新用户请求、近期完整工具配对及当前结构化 Spec。
+大历史分批摘要，不调用工具；摘要可能丢失细节，原始历史仍保留在 Session 中并用于显示。
+压缩失败不替换原上下文；历史太短且摘要没有收益时保持原样。单条消息过大或压缩后仍超限
+会明确失败，可缩短输入或创建新 Session。策略后续可独立优化。
 
 澄清界面默认高亮推荐项；只有用户提交后才形成答案。方向键选择其他选项；直接输入是自由
 回答；输入文字后按方向键或 Tab，可同时提交选项与补充。Enter 提交，Esc/Ctrl+C 取消。
@@ -83,7 +94,9 @@ Runtime 不向模型开放工具，也会拒绝异常返回的工具调用；用
 - 文件路径在解析符号链接后复验工作区边界，状态文件采用同目录临时文件加原子替换；
 - 语言切换只改变当前进程的 UI 文案，不翻译历史、Spec、系统提示或模型回答。
 
-原 Python `schema_version=1` 的 Session / Spec JSON、ID、版本历史及目录格式继续兼容：
+旧 Python `schema_version=1` 的 Session 可继续读取，按需迁移为带上下文摘要的 Session v2；
+原始消息、Spec JSON、ID、版本历史和目录格式保留。旧版程序不能读取 Session v2，回退方法见
+[状态与记忆](docs/engineering/state-and-memory.md)。
 
 ```text
 .specpilot/sessions/index.json
@@ -97,7 +110,7 @@ Python CLI、`code.py`、pip/uv 依赖与旧 Python 测试已移除；使用上�
 
 MVP 仍只支持单进程写入和完整轮次之间恢复；不支持工具执行中 checkpoint、跨 worktree
 共享或安全中断正在执行的模型/工具调用。运行时 UI 会明确拒绝强制退出操作。
-Skill Loader、Context Compaction、MCP 和 Permission HITL 尚未实现。
+Skill Loader、MCP 和 Permission HITL 尚未实现。
 
 ## 工程验证
 

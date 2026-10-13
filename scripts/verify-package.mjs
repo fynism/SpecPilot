@@ -75,14 +75,18 @@ try {
       cwd: installation,
       input,
     });
-  assert(invoke(['--help']).includes('/done'));
+  const help = invoke(['--help']);
+  assert(help.includes('/done'));
+  assert(help.includes('/compact'));
   assert.equal(invoke(['--version']), '0.1.0\n');
   writeFileSync(
     join(installation, '.env'),
     'ANTHROPIC_API_KEY=offline\nMODEL_ID=fake\nMAX_TOOL_USE_TURNS=20\n',
   );
-  const output = invoke([], '/new 分发验收\n/rename npm会话\n/status\n/quit\n');
+  const output = invoke([], '/new 分发验收\n/rename npm会话\n/status\n/compact\n/quit\n');
   assert(output.includes('npm会话'));
+  assert(output.includes('/ 500,000 tokens'));
+  assert(output.includes('没有可压缩的完整历史'));
   assert(!output.includes('\u001b'), '管道模式不得输出控制序列');
   const index = JSON.parse(
     readFileSync(join(installation, '.specpilot/sessions/index.json'), 'utf8'),
@@ -95,7 +99,8 @@ try {
     ),
   );
   assert.equal(session.title, 'npm会话');
-  assert.equal(session.schema_version, 1);
+  assert.equal(session.schema_version, 2);
+  assert.deepEqual(session.context, { summary: '', through: 0, compactions: [] });
   console.log('npm 分发验收通过：本地 tarball、仅生产依赖、CLI shim、帮助/版本、管道 Session。');
 } finally {
   // 删除前复验绝对目标确为本脚本新建的临时目录，不接受任意环境输入作为删除对象。

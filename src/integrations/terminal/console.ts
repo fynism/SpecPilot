@@ -5,8 +5,15 @@ import {
   type ClarificationRequest,
 } from '../../capabilities/clarification/models.js';
 import { ClarificationCancelled } from '../../capabilities/clarification/tool.js';
+import {
+  buildContextMessages,
+  type ContextUsage,
+  estimateContextUsage,
+} from '../../runtime/context/index.js';
+import { ContextLimitError } from '../../runtime/model.js';
+import { SYSTEM } from '../../runtime/prompts.js';
 import type { SessionManager } from '../../runtime/session/manager.js';
-import { runSessionTurn } from '../../runtime/turn.js';
+import { compactSession, runSessionTurn } from '../../runtime/turn.js';
 import type { RuntimeFactory } from './app.js';
 import { handleSessionCommand, statusText } from './commands.js';
 import { readableTranscript, safeTerminalText } from './text.js';
@@ -75,6 +82,7 @@ export async function runConsole(
   runtimeFactory: RuntimeFactory,
   stdin: NodeJS.ReadableStream = process.stdin,
   stdout: NodeJS.WritableStream = process.stdout,
+  getUsage?: () => ContextUsage,
 ): Promise<void> {
   const input = new ConsoleInput(stdin);
   const emit = (text: string) => {
@@ -95,6 +103,16 @@ export async function runConsole(
   try {
     present();
     while (true) {
+      const usage =
+        getUsage?.() ??
+        estimateContextUsage(
+          buildContextMessages(manager.messages, manager.context, manager.currentSpec()),
+          [],
+          SYSTEM,
+        );
+      emit(
+        `上下文（估算）：${usage.usedTokens.toLocaleString('zh-CN')} / ${usage.window.toLocaleString('zh-CN')} tokens · ${usage.percentage.toFixed(1)}%`,
+      );
       emit('SpecPilot >>');
       const query = await input.read();
       if (query === null || ['q', 'exit', ''].includes(query.trim().toLowerCase())) return;
@@ -128,6 +146,7 @@ export async function runConsole(
         emit('界面语言切换仅适用于全屏 TUI。');
         continue;
       }
+      let compacting = false;
       try {
         const result = handleSessionCommand(query, manager, emit);
         if (result === 'quit') return;
@@ -136,6 +155,11 @@ export async function runConsole(
           continue;
         }
         if (result === 'handled') continue;
+        if (result === 'compact') {
+          compacting = true;
+          await compactSession(manager, runtimeFactory(presenter, emit));
+          continue;
+        }
         const reason = await runSessionTurn(manager, runtimeFactory(presenter, emit), query);
         if (reason === 'stop') return;
         if (reason === 'max_tool_use_turns') emit('本轮达到工具调用上限，可继续下一轮。');
@@ -143,9 +167,14 @@ export async function runConsole(
         if (last?.role === 'assistant')
           for (const entry of readableTranscript([last])) emit(entry.text);
       } catch (error) {
-        emit(
-          `Agent 运行失败：${error instanceof Error ? error.name : 'UnknownError'}。当前轮次已标记为中断。`,
-        );
+        const failure =
+          error instanceof ContextLimitError
+            ? error.message
+            : error instanceof Error
+              ? error.name
+              : 'UnknownError';
+        if (compacting) emit(`上下文压缩失败：${failure}；原上下文已保留。`);
+        else emit(`Agent 运行失败：${failure}。当前轮次已标记为中断。`);
       }
     }
   } finally {

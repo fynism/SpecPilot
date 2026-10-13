@@ -6,11 +6,12 @@ export const commands = [
   '/switch',
   '/rename',
   '/status',
+  '/compact',
   '/done',
   '/language',
   '/quit',
 ] as const;
-export type CommandResult = 'not_command' | 'handled' | 'session_changed' | 'quit';
+export type CommandResult = 'not_command' | 'handled' | 'session_changed' | 'quit' | 'compact';
 export function statusText(manager: SessionManager): string {
   const session = manager.current;
   const spec = manager.currentSpec();
@@ -31,6 +32,13 @@ export function handleSessionCommand(
     return 'handled';
   }
   if (command === '/quit') return 'quit';
+  if (command === '/compact') {
+    if (argument) {
+      emit('用法：/compact');
+      return 'handled';
+    }
+    return 'compact';
+  }
   if (command === '/new') {
     const session = manager.create(argument || '新对话');
     emit(`已创建并切换到 Session：${session.session_id} · ${session.title}`);
