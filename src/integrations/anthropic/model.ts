@@ -3,6 +3,7 @@ import type { MessageParam, Tool } from '@anthropic-ai/sdk/resources/messages';
 import { z } from 'zod';
 import type { Settings } from '../../config.js';
 import {
+  ContextLimitError,
   type Message,
   type ModelBlock,
   type ModelClient,
@@ -40,14 +41,27 @@ export class AnthropicModelClient implements ModelClient {
         }) as Tool['input_schema'],
       }),
     );
-    const response = await this.client.messages.create({
-      model: this.settings.model,
-      system,
-      // 内部结构已校验；供应商 SDK 的联合类型转换只留在此协议边界。
-      messages: messages as MessageParam[],
-      max_tokens: maxTokens,
-      ...(declarations.length ? { tools: declarations } : {}),
-    });
+    const response = await this.client.messages
+      .create({
+        model: this.settings.model,
+        system,
+        // 内部结构已校验；供应商 SDK 的联合类型转换只留在此协议边界。
+        messages: messages as MessageParam[],
+        max_tokens: maxTokens,
+        ...(declarations.length ? { tools: declarations } : {}),
+      })
+      .catch((error: unknown) => {
+        // 仅识别明确的上下文长度错误；认证、限流和其他请求错误不触发压缩。
+        if (
+          error instanceof Anthropic.APIError &&
+          [400, 413].includes(error.status ?? 0) &&
+          /prompt is too long|context.{0,40}(?:limit|length|window)|maximum context|too many tokens/i.test(
+            error.message,
+          )
+        )
+          throw new ContextLimitError('模型上下文超过供应商限制。');
+        throw error;
+      });
     const normalized: ModelBlock[] = [];
     for (const block of response.content) {
       if (block.type === 'text')

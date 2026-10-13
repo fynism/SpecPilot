@@ -21,6 +21,11 @@ export const messageSchema = z.strictObject({
 export type ModelBlock = z.infer<typeof modelBlockSchema>;
 export type Message = z.infer<typeof messageSchema>;
 
+/** 供应商超限的安全分类，不携带原始请求或供应商错误正文。 */
+export class ContextLimitError extends Error {
+  override name = 'ContextLimitError';
+}
+
 /** 供应商无关的异步模型端口，SDK 类型仅停留在适配层。 */
 export interface ModelClient {
   createMessage(

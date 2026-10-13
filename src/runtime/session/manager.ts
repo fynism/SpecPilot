@@ -1,6 +1,7 @@
 import { type Clock, newId, type Specification, utcNow } from '../../capabilities/spec/models.js';
 import { SpecToolService } from '../../capabilities/spec/operations.js';
 import { InMemorySpecStore } from '../../capabilities/spec/store.js';
+import { type ContextState, contextStateSchema } from '../context/index.js';
 import type { Message } from '../model.js';
 import { createSessionRecord, type SessionRecord } from './models.js';
 import type { SessionStore } from './store.js';
@@ -24,6 +25,19 @@ export class SessionManager {
   }
   get messages(): Message[] {
     return this.require().record.messages;
+  }
+  get context(): ContextState {
+    return structuredClone(this.require().record.context);
+  }
+  /** 运行中随完整轮次保存；手动压缩在轮次间原子提交，不更改生命周期。 */
+  updateContext(context: ContextState): void {
+    const next = {
+      ...this.require().record,
+      context: contextStateSchema.parse(context),
+      updated_at: this.clock(),
+    };
+    if (next.status === 'running') this.record = next;
+    else this.persist(next);
   }
   get specTools(): SpecToolService {
     const { record, specStore } = this.require();

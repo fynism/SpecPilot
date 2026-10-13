@@ -3,6 +3,7 @@ import { ClarificationStopController } from './capabilities/clarification/policy
 import type { Settings } from './config.js';
 import { AnthropicModelClient } from './integrations/anthropic/model.js';
 import { AgentRuntime } from './runtime/agent.js';
+import { ContextManager } from './runtime/context/index.js';
 import { buildDefaultHooks } from './runtime/hooks.js';
 import type { ModelClient } from './runtime/model.js';
 import type { SessionManager } from './runtime/session/manager.js';
@@ -24,13 +25,24 @@ export function buildSessionRuntime(
     stop.observeAnswer(answer);
   });
   const registry = buildDefaultRegistry(root, manager.specTools, presenter, hooks.trigger);
+  const model = client ?? new AnthropicModelClient(settings);
   return new AgentRuntime(
-    client ?? new AnthropicModelClient(settings),
+    model,
     hooks,
     registry,
     new ToolExecutor(registry, hooks.trigger),
     stop,
     settings.max_tool_use_turns,
     emit,
+    new ContextManager(
+      model,
+      {
+        read: () => manager.context,
+        write: (state) => manager.updateContext(state),
+        spec: () => manager.currentSpec(),
+      },
+      emit,
+      settings.model,
+    ),
   );
 }
