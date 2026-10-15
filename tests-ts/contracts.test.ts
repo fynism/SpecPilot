@@ -6,6 +6,7 @@ import { createSpecification, specificationSchema } from '../src/capabilities/sp
 import { loadSettings } from '../src/config.js';
 import { FINAL_RESPONSE_SYSTEM_SUFFIX, SYSTEM } from '../src/runtime/prompts.js';
 import { sessionSchema } from '../src/runtime/session/models.js';
+import { emptyTokenLedger } from '../src/runtime/usage.js';
 
 describe('严格契约与兼容配置', () => {
   it('模型角色与工具边界提示逐字保留原 Python 版本', () => {
@@ -19,9 +20,17 @@ describe('严格契约与兼容配置', () => {
       readFileSync(new URL('./fixtures/python-session-v1.json', import.meta.url), 'utf8'),
     );
     const migrated = sessionSchema.parse(original);
-    expect(migrated).toMatchObject({ ...original, schema_version: 2 });
+    expect(migrated).toEqual({
+      ...original,
+      schema_version: 4,
+      clarification_plan: migrated.clarification_plan,
+      context: { summary: '', through: 0, compactions: [] },
+      token_usage: emptyTokenLedger(true),
+    });
     expect(migrated.clarification_plan.questions).toEqual([]);
     expect(() => sessionSchema.parse({ ...original, schema_version: 2 })).toThrow();
+    expect(sessionSchema.parse(migrated)).toEqual(migrated);
+    expect(() => sessionSchema.parse({ ...original, schema_version: 5 })).toThrow();
     expect(() => sessionSchema.parse({ ...original, status: 'running' })).toThrow();
     expect(() =>
       sessionSchema.parse({ ...original, spec_versions: [...original.spec_versions].reverse() }),

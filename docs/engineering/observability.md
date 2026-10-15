@@ -29,6 +29,12 @@ spec_version, actor, capability, outcome, duration_ms, error_code
 - Spec、Decision、Assumption、Memory 和 checkpoint 版本变化；
 - Eval 版本、样本、分数和失败分类。
 
+当前 CLI 的 Token 统计以供应商响应 `usage` 为消耗事实源。Anthropic 适配器把普通输入、
+缓存写入及缓存读取相加为输入总数，输出独立记录；生成和压缩摘要均计入 Session 的本次
+和累计统计。缺失/非法用量及调用失败标记不完整，不伪造实际零值，也不从字符长度重建历史。
+UI 的当前上下文占用另通过同一服务的 `countTokens` 计数，按请求参数摘要失效；仅接口明确
+不支持时显示带来源标记的本地估算。消耗与窗口占用不能混用，相关字段不记录完整正文。
+
 ## 日志与隐私
 
 - 使用结构化日志，禁止靠解析自由文本获得关键指标。

@@ -7,15 +7,27 @@ import type {
   ClarificationRequest,
 } from '../../capabilities/clarification/models.js';
 import { ClarificationCancelled } from '../../capabilities/clarification/tool.js';
-import type { AgentRuntime } from '../../runtime/agent.js';
+import type { AgentRuntime, StopReason } from '../../runtime/agent.js';
+import {
+  buildContextMessages,
+  type ContextUsage,
+  estimateContextUsage,
+} from '../../runtime/context/index.js';
+import { ContextLimitError, TokenCountError } from '../../runtime/model.js';
+import { SYSTEM } from '../../runtime/prompts.js';
 import type { SessionManager } from '../../runtime/session/manager.js';
-import { runSessionTurn } from '../../runtime/turn.js';
+import { compactSession, runSessionTurn } from '../../runtime/turn.js';
 import { ClarificationBoard } from './clarification-board.js';
 import { commands, handleSessionCommand } from './commands.js';
 import { type Locale, resolveLocale, type TextKey, translate } from './i18n.js';
 import { InputLine } from './input.js';
 import { ClarificationOverlay, LanguageOverlay, SessionOverlay } from './overlays.js';
-import { readableTranscript, safeTerminalText } from './text.js';
+import {
+  contextUsageText,
+  readableTranscript,
+  safeTerminalText,
+  tokenConsumptionText,
+} from './text.js';
 
 export type RuntimeFactory = (
   presenter: ClarificationPresenter,
@@ -37,9 +49,11 @@ function terminalDimensions(stdout: NodeJS.WritableStream): { rows: number; colu
 export function TerminalApp({
   manager,
   runtimeFactory,
+  getUsage,
 }: {
   manager: SessionManager;
   runtimeFactory: RuntimeFactory;
+  getUsage?: () => ContextUsage;
 }) {
   const { exit } = useApp();
   const { stdout } = useStdout();
@@ -86,7 +100,10 @@ export function TerminalApp({
       }),
   };
   const emit = (text: string) => {
-    if (mounted.current) setNotice(safeTerminalText(text));
+    if (mounted.current) {
+      setNotice(safeTerminalText(text));
+      refresh((r) => r + 1);
+    }
   };
   const submit = async (query: string): Promise<void> => {
     if (query.trim().toLowerCase() === '/clarify') {
@@ -115,20 +132,25 @@ export function TerminalApp({
       }
       return;
     }
+    let compacting = false;
     try {
       const result = handleSessionCommand(query, manager, emit);
       if (result === 'quit') {
         exit();
         return;
       }
-      if (result !== 'not_command') {
+      if (result !== 'not_command' && result !== 'compact') {
         refresh((r) => r + 1);
         return;
       }
       busyRef.current = true;
       setBusy(true);
-      setStatus('status.running');
-      const reason = await runSessionTurn(manager, runtimeFactory(presenter, emit), query);
+      compacting = result === 'compact';
+      setStatus(compacting ? 'status.compacting' : 'status.running');
+      const runtime = runtimeFactory(presenter, emit);
+      let reason: StopReason | 'stop' = 'model_complete';
+      if (compacting) await compactSession(manager, runtime);
+      else reason = await runSessionTurn(manager, runtime, query);
       if (mounted.current) {
         if (reason === 'clarification_round_ready') setOverlay('clarify');
         setStatus(reason === 'max_tool_use_turns' ? 'status.tool_limit' : 'status.waiting');
@@ -138,7 +160,14 @@ export function TerminalApp({
       if (mounted.current) {
         setStatus('status.waiting');
         setNotice(
-          t('status.failure', { error: error instanceof Error ? error.name : 'UnknownError' }),
+          t(compacting ? 'status.compaction_failure' : 'status.failure', {
+            error:
+              error instanceof ContextLimitError || error instanceof TokenCountError
+                ? error.message
+                : error instanceof Error
+                  ? error.name
+                  : 'UnknownError',
+          }),
         );
         refresh((r) => r + 1);
       }
@@ -170,7 +199,7 @@ export function TerminalApp({
       return wrapped;
     });
   });
-  const viewHeight = Math.max(3, dimensions.rows - 10);
+  const viewHeight = Math.max(3, dimensions.rows - 12);
   const start = Math.min(
     offset ?? Math.max(0, lines.length - viewHeight),
     Math.max(0, lines.length - viewHeight),
@@ -194,6 +223,9 @@ export function TerminalApp({
   });
   const session = manager.current;
   const spec = manager.currentSpec();
+  const usage =
+    getUsage?.() ??
+    estimateContextUsage(buildContextMessages(manager.messages, manager.context, spec), [], SYSTEM);
   const candidates =
     prefix.startsWith('/') && !/\s/.test(prefix)
       ? commands.filter((c) => c.startsWith(prefix.toLowerCase()))
@@ -303,6 +335,12 @@ export function TerminalApp({
           </Text>
         ) : null}
         {busy ? <Spinner label={t(status)} /> : <Text color="cyan">{t(status)}</Text>}
+        <Text dimColor wrap="truncate-end">
+          {contextUsageText(usage, locale)}
+        </Text>
+        <Text dimColor wrap="truncate-end">
+          {tokenConsumptionText(session.token_usage, locale)}
+        </Text>
         {!busy && !overlay ? (
           <>
             {candidates.length ? (

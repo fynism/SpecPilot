@@ -2,7 +2,7 @@
 import { realpathSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { render } from 'ink';
-import { buildSessionRuntime } from './bootstrap.js';
+import { buildContextUsageReader, buildSessionRuntime } from './bootstrap.js';
 import { loadSettings } from './config.js';
 import { LocalSessionStore } from './integrations/filesystem/session-store.js';
 import { type RuntimeFactory, TerminalApp } from './integrations/terminal/app.js';
@@ -21,6 +21,7 @@ ANTHROPIC_BASE_URL 和 MAX_TOOL_USE_TURNS。
 /rename <标题>        重命名当前 Session
 /status               显示 Session 和 Spec 状态
 /clarify              查看跨轮总览、编辑答案并按轮提交
+/compact              手动压缩当前上下文，保留原始历史
 /done                 结束澄清，只总结已有信息
 /language [zh-CN|en-US] 切换全屏界面语言
 /quit                 退出
@@ -51,15 +52,19 @@ export async function main(args = process.argv.slice(2)): Promise<void> {
     manager.start();
     const runtimeFactory: RuntimeFactory = (presenter, emit) =>
       buildSessionRuntime(manager, root, settings, presenter, emit);
+    const getUsage = buildContextUsageReader(manager, root);
     if (process.stdin.isTTY && process.stdout.isTTY) {
-      const app = render(<TerminalApp manager={manager} runtimeFactory={runtimeFactory} />, {
-        alternateScreen: true,
-        interactive: true,
-        exitOnCtrlC: false,
-        patchConsole: false,
-      });
+      const app = render(
+        <TerminalApp manager={manager} runtimeFactory={runtimeFactory} getUsage={getUsage} />,
+        {
+          alternateScreen: true,
+          interactive: true,
+          exitOnCtrlC: false,
+          patchConsole: false,
+        },
+      );
       await app.waitUntilExit();
-    } else await runConsole(manager, runtimeFactory);
+    } else await runConsole(manager, runtimeFactory, process.stdin, process.stdout, getUsage);
   } catch (error) {
     // 配置错误已在读取边界脱敏，其余外部异常只显示类型，避免供应商请求数据泄漏。
     const message =

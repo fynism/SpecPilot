@@ -345,7 +345,7 @@ describe('多轮澄清领域状态', () => {
       writeFileSync(path, bytes);
       const store = new LocalSessionStore(f.root);
       const migrated = store.load(old.session_id);
-      expect(migrated.schema_version).toBe(2);
+      expect(migrated.schema_version).toBe(4);
       expect(migrated.messages).toEqual(old.messages);
       store.save(migrated);
       store.save(migrated);

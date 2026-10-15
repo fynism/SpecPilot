@@ -5,12 +5,24 @@ import {
   type ClarificationRequest,
 } from '../../capabilities/clarification/models.js';
 import { ClarificationCancelled } from '../../capabilities/clarification/tool.js';
+import {
+  buildContextMessages,
+  type ContextUsage,
+  estimateContextUsage,
+} from '../../runtime/context/index.js';
+import { ContextLimitError, TokenCountError } from '../../runtime/model.js';
+import { SYSTEM } from '../../runtime/prompts.js';
 import type { SessionManager } from '../../runtime/session/manager.js';
-import { runSessionTurn } from '../../runtime/turn.js';
+import { compactSession, runSessionTurn } from '../../runtime/turn.js';
 import type { RuntimeFactory } from './app.js';
 import { runClarificationConsole } from './clarification-console.js';
 import { handleSessionCommand, statusText } from './commands.js';
-import { readableTranscript, safeTerminalText } from './text.js';
+import {
+  contextUsageText,
+  readableTranscript,
+  safeTerminalText,
+  tokenConsumptionText,
+} from './text.js';
 
 /** 一个共享逐行队列同时供命令与澄清消费，预先管道化的输入不会丢失。 */
 export class ConsoleInput {
@@ -76,6 +88,7 @@ export async function runConsole(
   runtimeFactory: RuntimeFactory,
   stdin: NodeJS.ReadableStream = process.stdin,
   stdout: NodeJS.WritableStream = process.stdout,
+  getUsage?: () => ContextUsage,
 ): Promise<void> {
   const input = new ConsoleInput(stdin);
   const emit = (text: string) => {
@@ -120,6 +133,15 @@ export async function runConsole(
   try {
     present();
     while (true) {
+      const usage =
+        getUsage?.() ??
+        estimateContextUsage(
+          buildContextMessages(manager.messages, manager.context, manager.currentSpec()),
+          [],
+          SYSTEM,
+        );
+      emit(contextUsageText(usage, 'zh-CN'));
+      emit(tokenConsumptionText(manager.current.token_usage, 'zh-CN'));
       emit('SpecPilot >>');
       const query = await input.read();
       if (query === null || ['q', 'exit', ''].includes(query.trim().toLowerCase())) return;
@@ -157,6 +179,7 @@ export async function runConsole(
         emit('界面语言切换仅适用于全屏 TUI。');
         continue;
       }
+      let compacting = false;
       try {
         const result = handleSessionCommand(query, manager, emit);
         if (result === 'quit') return;
@@ -165,13 +188,23 @@ export async function runConsole(
           continue;
         }
         if (result === 'handled') continue;
+        if (result === 'compact') {
+          compacting = true;
+          await compactSession(manager, runtimeFactory(presenter, emit));
+          continue;
+        }
         const reason = await run(query);
         if (reason === 'stop') return;
         if (reason === 'clarification_round_ready') await clarify();
       } catch (error) {
-        emit(
-          `Agent 运行失败：${error instanceof Error ? error.name : 'UnknownError'}。当前轮次已标记为中断。`,
-        );
+        const failure =
+          error instanceof ContextLimitError || error instanceof TokenCountError
+            ? error.message
+            : error instanceof Error
+              ? error.name
+              : 'UnknownError';
+        if (compacting) emit(`上下文压缩失败：${failure}；原上下文已保留。`);
+        else emit(`Agent 运行失败：${failure}。当前轮次已标记为中断。`);
       }
     }
   } finally {

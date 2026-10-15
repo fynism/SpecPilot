@@ -4,6 +4,7 @@ import { Readable, Writable } from 'node:stream';
 import { pathToFileURL } from 'node:url';
 import { cleanup, render } from 'ink-testing-library';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { buildContextUsageReader } from '../src/bootstrap.js';
 import type { ClarificationAnswer } from '../src/capabilities/clarification/models.js';
 import { TerminalApp } from '../src/integrations/terminal/app.js';
 import { catalogs } from '../src/integrations/terminal/catalogs.js';
@@ -27,6 +28,7 @@ afterEach(() => {
 type Screen = ReturnType<typeof render>;
 async function frame(screen: Screen, text: string): Promise<void> {
   await vi.waitFor(() => expect(screen.lastFrame()).toContain(text));
+  // Ink 写出帧早于 useInput 的被动 effect；等待下一事件循环再发送按键。
   await new Promise<void>((resolve) => setImmediate(resolve));
 }
 async function type(screen: Screen, value: string): Promise<void> {
@@ -178,6 +180,204 @@ describe('Ink 澄清真实按键', () => {
 });
 
 describe('Ink Session、语言与对话', () => {
+  it('显示供应商上下文计数与 API 实际消耗，本次及累计独立计算', async () => {
+    const fixture = temporaryManager();
+    try {
+      let request = 0;
+      let usage = { input_tokens: 0, output_tokens: 0 };
+      const client = {
+        get lastUsage() {
+          return usage;
+        },
+        countTokens: async () => 5000,
+        createMessage: async () => {
+          usage =
+            ++request === 1
+              ? { input_tokens: 4000, output_tokens: 200 }
+              : { input_tokens: 4500, output_tokens: 300 };
+          return [{ type: 'text' as const, text: `实际用量回答${request}` }];
+        },
+      };
+      const screen = render(
+        <TerminalApp
+          manager={fixture.manager}
+          getUsage={buildContextUsageReader(fixture.manager, fixture.root, 'single')}
+          runtimeFactory={(presenter, emit) =>
+            buildSessionRuntime(fixture.manager, fixture.root, settings, presenter, emit, client)
+          }
+        />,
+      );
+      await frame(screen, '上下文：待计数');
+      await type(screen, '第一次请求');
+      screen.stdin.write('\r');
+      await frame(screen, '实际用量回答1');
+      await frame(screen, '上下文（供应商计数）：5,000 / 500,000 tokens · 1.0%');
+      await frame(screen, '消耗（API）：本次 4,200 · 累计 4,200 tokens');
+      await type(screen, '第二次请求');
+      screen.stdin.write('\r');
+      await frame(screen, '实际用量回答2');
+      await frame(screen, '消耗（API）：本次 4,800 · 累计 9,000 tokens');
+      await type(screen, '/language en-US');
+      screen.stdin.write('\r');
+      await frame(screen, 'Context (provider count): 5,000 / 500,000 tokens · 1.0%');
+      await frame(screen, 'Usage (API): this turn 4,800 · total 9,000 tokens');
+    } finally {
+      fixture.cleanup();
+    }
+  });
+  it('底部用量在工具运行期间实时更新，切换 Session 后重置', async () => {
+    const fixture = temporaryManager();
+    try {
+      const getUsage = buildContextUsageReader(fixture.manager, fixture.root, 'single');
+      const initial = getUsage().usedTokens;
+      let finish: () => void = () => undefined;
+      const waiting = new Promise<void>((resolve) => {
+        finish = resolve;
+      });
+      let count = 0;
+      const screen = render(
+        <TerminalApp
+          manager={fixture.manager}
+          getUsage={getUsage}
+          runtimeFactory={(presenter, emit) =>
+            buildSessionRuntime(fixture.manager, fixture.root, settings, presenter, emit, {
+              createMessage: async () => {
+                if (++count === 1) return [call('usage', 'get_spec')];
+                await waiting;
+                return [{ type: 'text', text: '实时用量验证完成' }];
+              },
+            })
+          }
+        />,
+      );
+      await frame(screen, '上下文：待计数 / 500,000 tokens');
+      await type(screen, '开始工具调用');
+      screen.stdin.write('\r');
+      await vi.waitFor(() => expect(count).toBe(2));
+      expect(fixture.manager.current.status).toBe('running');
+      const used = getUsage();
+      expect(used.usedTokens).toBeGreaterThan(initial);
+      await frame(
+        screen,
+        `${used.usedTokens.toLocaleString('zh-CN')} / 500,000 tokens · ${used.percentage.toFixed(1)}%`,
+      );
+      finish();
+      await frame(screen, '实时用量验证完成');
+      await type(screen, '/new 空对话');
+      screen.stdin.write('\r');
+      await vi.waitFor(() => expect(fixture.manager.current.title).toBe('空对话'));
+      await frame(screen, '上下文：待计数 / 500,000 tokens');
+    } finally {
+      fixture.cleanup();
+    }
+  });
+  it('Tab 补全 /compact，显示压缩状态及下降的用量，压缩后可继续对话', async () => {
+    const fixture = temporaryManager();
+    try {
+      fixture.manager.beginTurn(`仅管理员，不要外传。${'旧资料'.repeat(3000)}`);
+      fixture.manager.messages.push(
+        { role: 'assistant', content: '已读取旧资料' },
+        { role: 'user', content: '未决：编码' },
+        { role: 'assistant', content: '等待确认编码' },
+        { role: 'user', content: '采用 UTF-8' },
+        { role: 'assistant', content: '已确认 UTF-8' },
+      );
+      fixture.manager.completeTurn();
+      const original = structuredClone(fixture.manager.messages);
+      const getUsage = buildContextUsageReader(fixture.manager, fixture.root, 'single');
+      const before = getUsage().usedTokens;
+      let finish: () => void = () => undefined;
+      const waiting = new Promise<void>((resolve) => {
+        finish = resolve;
+      });
+      const exposed: number[] = [];
+      const screen = render(
+        <TerminalApp
+          manager={fixture.manager}
+          getUsage={getUsage}
+          runtimeFactory={(presenter, emit) =>
+            buildSessionRuntime(fixture.manager, fixture.root, settings, presenter, emit, {
+              createMessage: async (messages, tools) => {
+                exposed.push(tools.length);
+                if (!tools.length) {
+                  await waiting;
+                  return [
+                    {
+                      type: 'text',
+                      text: '用户仅允许管理员操作，禁止外传；编码采用 UTF-8，证据为消息4。',
+                    },
+                  ];
+                }
+                expect(messages[0]?.content).toContain('禁止外传');
+                return [{ type: 'text', text: '压缩后继续成功' }];
+              },
+            })
+          }
+        />,
+      );
+      await frame(screen, '等待输入');
+      await type(screen, '/comp');
+      await frame(screen, '/compact — 压缩当前上下文');
+      screen.stdin.write('\t');
+      await frame(screen, '› /compact');
+      screen.stdin.write('\r');
+      await frame(screen, '正在压缩上下文');
+      screen.stdin.write('\u0011');
+      await frame(screen, '不能安全中断');
+      expect(fixture.manager.current.status).toBe('waiting_for_user');
+      finish();
+      await frame(screen, '上下文已压缩');
+      expect(fixture.manager.messages).toEqual(original);
+      expect(getUsage().usedTokens).toBeLessThan(before);
+      await frame(screen, `${getUsage().usedTokens.toLocaleString('zh-CN')} / 500,000 tokens`);
+      await type(screen, '继续任务');
+      screen.stdin.write('\r');
+      await frame(screen, '压缩后继续成功');
+      expect(exposed).toEqual([0, 8]);
+      expect(fixture.manager.current.status).toBe('waiting_for_user');
+      await type(screen, '/language en-US');
+      screen.stdin.write('\r');
+      await frame(screen, 'Context (estimated):');
+    } finally {
+      fixture.cleanup();
+    }
+  });
+  it('手动压缩失败保留原上下文和生命周期，错误不回显密钥', async () => {
+    const fixture = temporaryManager();
+    try {
+      fixture.manager.beginTurn('旧资料'.repeat(3000));
+      fixture.manager.messages.push(
+        { role: 'assistant', content: '旧回答' },
+        { role: 'user', content: '新问题' },
+      );
+      fixture.manager.completeTurn();
+      const original = fixture.manager.current;
+      const screen = render(
+        <TerminalApp
+          manager={fixture.manager}
+          runtimeFactory={(presenter, emit) =>
+            buildSessionRuntime(fixture.manager, fixture.root, settings, presenter, emit, {
+              createMessage: async () => {
+                throw new Error('secret-token');
+              },
+            })
+          }
+        />,
+      );
+      await frame(screen, '等待输入');
+      await type(screen, '/compact');
+      screen.stdin.write('\r');
+      await frame(screen, '上下文压缩失败');
+      expect(fixture.manager.messages).toEqual(original.messages);
+      expect(fixture.manager.context).toEqual(original.context);
+      expect(fixture.manager.current.status).toBe(original.status);
+      expect(fixture.manager.current.token_usage.total.unreported_requests).toBe(1);
+      expect(screen.lastFrame()).not.toContain('secret-token');
+      expect(screen.lastFrame()).not.toContain('本轮已标记为中断');
+    } finally {
+      fixture.cleanup();
+    }
+  });
   it('应用卸载唤醒待回答澄清，运行中的 Ctrl+Q 不能切换或退出', async () => {
     const fixture = temporaryManager();
     try {
@@ -349,6 +549,45 @@ describe('Ink Session、语言与对话', () => {
 });
 
 describe('非 TTY 与 npm CLI 入口', () => {
+  it('管道 /compact 不成为用户请求，保存摘要并继续下一轮；多余参数不调用模型', async () => {
+    const fixture = temporaryManager();
+    try {
+      fixture.manager.beginTurn(`仅管理员。${'旧资料'.repeat(3000)}`);
+      fixture.manager.messages.push(
+        { role: 'assistant', content: '旧回答' },
+        { role: 'user', content: '继续' },
+      );
+      fixture.manager.completeTurn();
+      const count = fixture.manager.messages.length;
+      const client = new ScriptedClient([
+        [{ type: 'text', text: '仅管理员；资料已阅读。' }],
+        [{ type: 'text', text: '继续成功' }],
+      ]);
+      let output = '';
+      await runConsole(
+        fixture.manager,
+        (presenter, emit) =>
+          buildSessionRuntime(fixture.manager, fixture.root, settings, presenter, emit, client),
+        Readable.from(['/compact extra\n/compact\n继续需求\n/quit\n']),
+        new Writable({
+          write(chunk, _encoding, done) {
+            output += String(chunk);
+            done();
+          },
+        }),
+        buildContextUsageReader(fixture.manager, fixture.root, 'single'),
+      );
+      expect(output).toContain('用法：/compact');
+      expect(output).toContain('上下文已压缩');
+      expect(output).toContain('继续成功');
+      expect(output).toContain('/ 500,000 tokens');
+      expect(output).not.toContain('\u001b');
+      expect(fixture.manager.messages).toHaveLength(count + 2);
+      expect(client.exposedTools.map((t) => t.length)).toEqual([0, 8]);
+    } finally {
+      fixture.cleanup();
+    }
+  });
   it('一次管道包含命令、选择、澄清和回答时不丢输入，不输出 ANSI', async () => {
     const fixture = temporaryManager();
     try {
@@ -398,7 +637,9 @@ describe('非 TTY 与 npm CLI 入口', () => {
             env: { ...process.env, ANTHROPIC_API_KEY: 'offline', MODEL_ID: 'fake' },
           },
         );
-      expect(invoke(['--help'])).toContain('/done');
+      const help = invoke(['--help']);
+      expect(help).toContain('/done');
+      expect(help).toContain('/compact');
       expect(invoke(['--version'])).toBe('0.1.0\n');
       const output = invoke([], '/new CLI会话\n/rename CLI标题\n/status\n/quit\n');
       expect(output).toContain('CLI标题');
@@ -420,6 +661,7 @@ describe('非 TTY 与 npm CLI 入口', () => {
       ]),
     ).toEqual([{ role: 'user', text: 'SpecPilot 也可以是用户文字' }]);
     expect(commands).toContain('/language');
+    expect(commands).toContain('/compact');
     const fixture = temporaryManager();
     try {
       expect(handleSessionCommand('/done', fixture.manager, () => undefined)).toBe('not_command');
