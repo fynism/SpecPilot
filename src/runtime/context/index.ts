@@ -175,7 +175,7 @@ export class ContextManager {
     this.emit(
       usage.source === 'provider'
         ? '上下文 Token 计数已更新。'
-        : '供应商未支持计数，当前上下文用量为估算值。',
+        : '供应商未支持当前请求计数，当前上下文用量为估算值。',
     );
     return usage;
   }

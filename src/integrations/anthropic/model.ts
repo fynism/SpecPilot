@@ -39,6 +39,7 @@ export class AnthropicModelClient implements ModelClient {
   private readonly client: Anthropic;
   private usage: TokenUsage | null = null;
   private countingUnsupported = false;
+  private assistantThinkingCountUnsupported = false;
   get lastUsage(): TokenUsage | null {
     return this.usage;
   }
@@ -59,7 +60,9 @@ export class AnthropicModelClient implements ModelClient {
     tools: ToolSpec[],
     system: string,
   ): Promise<number | null> {
-    if (this.countingUnsupported) return null;
+    const assistantWithTools = tools.length > 0 && messages.at(-1)?.role === 'assistant';
+    if (this.countingUnsupported || (assistantWithTools && this.assistantThinkingCountUnsupported))
+      return null;
     try {
       const specs = declarations(tools);
       const response = await this.client.messages.countTokens(
@@ -75,6 +78,20 @@ export class AnthropicModelClient implements ModelClient {
     } catch (error) {
       if (error instanceof Anthropic.APIError && [404, 405, 501].includes(error.status ?? 0)) {
         this.countingUnsupported = true;
+        return null;
+      }
+      // 部分兼容服务把 assistant 收尾视为 thinking 预填充，带工具时拒绝该计数格式。
+      // 只识别已复现的明确内容校验错误，不修改消息、伪造思考或关闭生成的 thinking。
+      // 缓存仅作用于此消息组合；追加 user 后仍精确计数，其他 400 一律继续报错。
+      if (
+        assistantWithTools &&
+        error instanceof Anthropic.APIError &&
+        error.status === 400 &&
+        /thinking/i.test(error.message) &&
+        /content/i.test(error.message) &&
+        /invalid|must|prefill|prefix/i.test(error.message)
+      ) {
+        this.assistantThinkingCountUnsupported = true;
         return null;
       }
       // 仅暴露 HTTP 状态供定位代理/服务问题；响应正文、请求、密钥不进入提示。

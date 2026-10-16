@@ -42,7 +42,7 @@ export class TokenCountError extends Error {
 export interface ModelClient {
   /** 最近一次模型生成的供应商用量；缺失为 null，失败前必须清空旧值。 */
   readonly lastUsage?: TokenUsage | null;
-  /** 按实际请求参数计数；只有接口明确不支持时返回 null。 */
+  /** 按实际请求参数计数；接口或特定请求格式明确不支持时返回 null，由调用方标注估算。 */
   countTokens?(messages: Message[], tools: ToolSpec[], system: string): Promise<number | null>;
   createMessage(
     messages: Message[],

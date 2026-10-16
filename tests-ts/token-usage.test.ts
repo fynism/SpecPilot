@@ -466,7 +466,58 @@ describe('真实 Token 用量与供应商计数契约', () => {
     expect(await client.countTokens(messages, [], '系统')).toBeNull();
     expect(calls).toBe(1);
   });
-  it.each([401, 429, 500])('计数状态 %i 明确失败，不悄悄降级且不泄漏正文', async (status) => {
+  it('仅在带工具的 assistant 收尾触发明确 thinking 校验拒绝时估算，不关闭生成思考或污染其他计数', async () => {
+    const bodies: Record<string, unknown>[] = [];
+    const tools = [{ name: 'inspect', description: '读取', inputSchema: z.strictObject({}) }];
+    const finished: Message[] = [
+      ...messages,
+      { role: 'assistant', content: [{ type: 'text', text: '回答' }] },
+    ];
+    const client = adapter(async (_url, init) => {
+      const body = JSON.parse(String(init?.body));
+      bodies.push(body);
+      if (body.tools && body.messages.at(-1)?.role === 'assistant')
+        return json(
+          {
+            error: {
+              type: 'invalid_request_error',
+              message:
+                'Invalid thinking content: content in thinking mode must be valid. private-detail',
+            },
+          },
+          400,
+        );
+      return json({ input_tokens: 123 });
+    });
+    expect(await client.countTokens(finished, [], '系统')).toBe(123);
+    expect(await client.countTokens(finished, tools, '系统')).toBeNull();
+    expect(await client.countTokens(finished, tools, '系统')).toBeNull();
+    expect(bodies).toHaveLength(2);
+    expect(await client.countTokens(messages, tools, '系统')).toBe(123);
+    expect(await client.countTokens(finished, [], '系统')).toBe(123);
+    expect(bodies).toHaveLength(4);
+    expect(bodies.every((body) => !('thinking' in body))).toBe(true);
+  });
+
+  it.each([
+    { assistant: true, tools: true, message: 'invalid tool schema' },
+    { assistant: false, tools: true, message: 'invalid thinking content must be valid' },
+    { assistant: true, tools: false, message: 'invalid thinking content must be valid' },
+  ])('其他 400 不按 thinking 收尾兼容处理：%j', async (scenario) => {
+    const client = adapter(async () =>
+      json({ error: { type: 'invalid_request_error', message: scenario.message } }, 400),
+    );
+    const input: Message[] = [
+      ...messages,
+      ...(scenario.assistant ? [{ role: 'assistant' as const, content: '回答' }] : []),
+    ];
+    const tools = scenario.tools
+      ? [{ name: 'inspect', description: '读取', inputSchema: z.strictObject({}) }]
+      : [];
+    await expect(client.countTokens(input, tools, '系统')).rejects.toThrow('HTTP 400');
+  });
+
+  it.each([400, 401, 429, 500])('计数状态 %i 明确失败，不悄悄降级且不泄漏正文', async (status) => {
     const client = adapter(async () =>
       json({ error: { type: 'invalid_request_error', message: 'secret-token' } }, status),
     );
