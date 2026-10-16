@@ -1,7 +1,14 @@
+import { z } from 'zod';
 import type { ClarificationStopController } from '../capabilities/clarification/policy.js';
 import type { ToolExecutor } from '../tooling/executor.js';
 import type { ToolRegistry } from '../tooling/registry.js';
-import { ContextManager, contextStateSchema, RESPONSE_TOKENS } from './context/index.js';
+import {
+  CONTEXT_WINDOW,
+  ContextManager,
+  contextStateSchema,
+  estimateContextUsage,
+  RESPONSE_TOKENS,
+} from './context/index.js';
 import type { HookRegistry } from './hooks.js';
 import {
   ContextLimitError,
@@ -10,9 +17,29 @@ import {
   type ModelClient,
   modelBlockSchema,
 } from './model.js';
-import { FINAL_RESPONSE_SYSTEM_SUFFIX, SYSTEM } from './prompts.js';
+import {
+  CHAT_SYSTEM,
+  CLARIFICATION_INTAKE_SYSTEM,
+  FINAL_RESPONSE_SYSTEM_SUFFIX,
+  SYSTEM,
+} from './prompts.js';
 
-export type StopReason = 'model_complete' | 'max_tool_use_turns' | 'clarification_round_ready';
+const intakeSchema = z.strictObject({
+  kind: z.enum(['ready', 'needs_details', 'not_requirement', 'different_requirement']),
+  message: z.string().trim().min(1).max(2000),
+});
+
+/** 仅包含宿主固定提示，可安全显示给用户。 */
+export class ClarificationIntakeError extends Error {
+  override name = 'ClarificationIntakeError';
+}
+
+export type StopReason =
+  | 'model_complete'
+  | 'max_tool_use_turns'
+  | 'clarification_round_ready'
+  | 'clarification_completed'
+  | 'clarification_incomplete';
 
 /** 模型选择路径，确定性代码约束输入、工具执行、预算与终止。 */
 export class AgentRuntime {
@@ -47,14 +74,51 @@ export class AgentRuntime {
       );
   }
   async compact(messages: Message[]): Promise<boolean> {
-    return this.context.compact(messages, this.registry.toolSpecs(), this.system);
+    return this.context.compact(messages, this.registry.toolSpecs(true), CHAT_SYSTEM);
   }
-  async run(messages: Message[], toolsEnabled = true): Promise<StopReason> {
+  /** 返回普通对话前，按下一次只读请求刷新窗口计数。 */
+  async refreshForChat(messages: Message[]): Promise<void> {
+    await this.context.refresh(messages, this.registry.toolSpecs(true), CHAT_SYSTEM);
+  }
+  /** 入口判断共用计量模型，但不把 JSON 判断结果写成用户事实。 */
+  async assessClarification(data: {
+    request: string;
+    current_spec: unknown;
+    clarification_plan: unknown;
+  }) {
+    const messages: Message[] = [{ role: 'user', content: JSON.stringify(data) }];
+    const inputTokens =
+      (await this.client.countTokens?.(messages, [], CLARIFICATION_INTAKE_SYSTEM)) ??
+      estimateContextUsage(messages, [], CLARIFICATION_INTAKE_SYSTEM).usedTokens;
+    if (inputTokens + 1000 >= CONTEXT_WINDOW)
+      throw new ContextLimitError('需求入口内容过长，请缩短需求描述。');
+    const blocks = (
+      await this.client.createMessage(messages, [], CLARIFICATION_INTAKE_SYSTEM, 1000)
+    ).map((block) => modelBlockSchema.parse(block));
+    if (blocks.some((block) => block.type !== 'text'))
+      throw new ClarificationIntakeError(
+        '需求入口判断不能调用工具，请重新使用 /clarify <需求描述>。',
+      );
+    try {
+      return intakeSchema.parse(
+        JSON.parse(
+          blocks
+            .filter((b) => b.type === 'text')
+            .map((b) => b.text)
+            .join('\n'),
+        ),
+      );
+    } catch {
+      throw new ClarificationIntakeError('需求入口判断格式无效，请重新使用 /clarify <需求描述>。');
+    }
+  }
+  async run(messages: Message[], toolsEnabled = true, readOnly = true): Promise<StopReason> {
     toolsEnabled = toolsEnabled && !this.stop.consumeRequest();
     let toolTurns = 0;
     while (true) {
-      const tools = toolsEnabled ? this.registry.toolSpecs() : [];
-      const system = toolsEnabled ? this.system : this.system + FINAL_RESPONSE_SYSTEM_SUFFIX;
+      const tools = toolsEnabled ? this.registry.toolSpecs(readOnly) : [];
+      const baseSystem = readOnly ? CHAT_SYSTEM : this.system;
+      const system = toolsEnabled ? baseSystem : baseSystem + FINAL_RESPONSE_SYSTEM_SUFFIX;
       const input = await this.context.prepare(messages, tools, system);
       let blocks: ModelBlock[];
       try {
@@ -80,7 +144,7 @@ export class AgentRuntime {
           messages.push({ role: 'user', content: force });
           continue;
         }
-        await this.context.refresh(messages, this.registry.toolSpecs(), this.system);
+        await this.refreshForChat(messages);
         return 'model_complete';
       }
       const results: Exclude<Message['content'], string> = [];
@@ -89,7 +153,7 @@ export class AgentRuntime {
         // 即便供应商异常返回 tool_use，也在执行器之前确定性拒绝；同批余下调用同样受约束。
         if (toolsEnabled && !this.stop.requested && !this.roundReady()) {
           this.emit(`执行工具：${call.name}`);
-          output = await this.executor.execute(call.name, call.input);
+          output = await this.executor.execute(call.name, call.input, readOnly);
           this.emit(`工具完成：${call.name} · ${Array.from(output).length} 字符`);
         } else if (this.roundReady()) {
           output = 'Error: 本轮问题已发布，后续工具调用被拒绝；请等待用户按轮提交。';
@@ -99,7 +163,7 @@ export class AgentRuntime {
       messages.push({ role: 'user', content: results });
       this.emit('工具结果已加入上下文。');
       if (this.roundReady()) {
-        await this.context.refresh(messages, this.registry.toolSpecs(), this.system);
+        await this.refreshForChat(messages);
         return 'clarification_round_ready';
       }
       const stopRequested = this.stop.consumeRequest();
@@ -107,7 +171,7 @@ export class AgentRuntime {
       toolTurns++;
       // 同批并行调用算一轮，先保留全部配对结果再暂停；结束回答优先进入最后总结。
       if (toolTurns >= this.maxToolUseTurns && !stopRequested) {
-        await this.context.refresh(messages, this.registry.toolSpecs(), this.system);
+        await this.refreshForChat(messages);
         return 'max_tool_use_turns';
       }
     }

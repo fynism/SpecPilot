@@ -2,11 +2,11 @@ import { describe, expect, it } from 'vitest';
 import { buildSessionRuntime } from '../src/bootstrap.js';
 import { LocalSessionStore } from '../src/integrations/filesystem/session-store.js';
 import { SessionManager } from '../src/runtime/session/manager.js';
-import { runSessionTurn } from '../src/runtime/turn.js';
 import {
   call,
   recommendedPresenter,
   required,
+  runClarificationTurn as runSessionTurn,
   ScriptedClient,
   temporaryManager,
 } from './helpers.js';
@@ -92,11 +92,11 @@ describe('默认 Runtime 多轮边界', () => {
       revived.start();
       expect(revived.clarification.get().answers).toHaveLength(1);
       expect(JSON.parse(revived.retryClarification()).submission.id).toBe('submit_one');
-      revived.beginTurn('重试');
+      revived.beginTurn('重试', true);
       const restarted = new SessionManager(new LocalSessionStore(f.root));
       restarted.start();
       expect(restarted.current.status).toBe('interrupted');
-      expect(restarted.clarification.get().submissions[0]?.status).toBe('retry');
+      expect(restarted.clarification.get().submissions[0]?.status).toBe('pending');
     } finally {
       f.cleanup();
     }

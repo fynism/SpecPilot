@@ -16,7 +16,6 @@ import {
 import { AnthropicModelClient } from '../src/integrations/anthropic/model.js';
 import { HookRegistry } from '../src/runtime/hooks.js';
 import type { Message } from '../src/runtime/model.js';
-import { runSessionTurn } from '../src/runtime/turn.js';
 import { ToolExecutor } from '../src/tooling/executor.js';
 import { ToolRegistry } from '../src/tooling/registry.js';
 import {
@@ -25,6 +24,7 @@ import {
   clarification,
   completePatch,
   recommendedPresenter,
+  runClarificationTurn as runSessionTurn,
   ScriptedClient,
   temporaryManager,
 } from './helpers.js';

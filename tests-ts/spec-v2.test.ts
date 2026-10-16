@@ -3,8 +3,13 @@ import { buildSessionRuntime } from '../src/bootstrap.js';
 import { renderSpecMarkdown } from '../src/capabilities/spec/export.js';
 import { createSpecification, specificationSchema } from '../src/capabilities/spec/models.js';
 import { patchSchema, SpecToolService } from '../src/capabilities/spec/operations.js';
-import { runSessionTurn } from '../src/runtime/turn.js';
-import { call, recommendedPresenter, ScriptedClient, temporaryManager } from './helpers.js';
+import {
+  call,
+  recommendedPresenter,
+  runClarificationTurn as runSessionTurn,
+  ScriptedClient,
+  temporaryManager,
+} from './helpers.js';
 import { initialRound } from './round-helpers.js';
 
 const settings = { api_key: 'offline', model: 'fake', max_tool_use_turns: 20 };

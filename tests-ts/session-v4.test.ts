@@ -5,11 +5,16 @@ import { buildContextUsageReader, buildSessionRuntime } from '../src/bootstrap.j
 import { LocalSessionStore } from '../src/integrations/filesystem/session-store.js';
 import { estimateContextUsage } from '../src/runtime/context/index.js';
 import type { Message, ModelClient } from '../src/runtime/model.js';
-import { ROUND_SYSTEM } from '../src/runtime/prompts.js';
+import { CHAT_SYSTEM, ROUND_SYSTEM } from '../src/runtime/prompts.js';
 import { SessionManager } from '../src/runtime/session/manager.js';
 import { sessionSchema } from '../src/runtime/session/models.js';
-import { compactSession, runSessionTurn } from '../src/runtime/turn.js';
-import { call, recommendedPresenter, temporaryManager } from './helpers.js';
+import { compactSession } from '../src/runtime/turn.js';
+import {
+  call,
+  recommendedPresenter,
+  runClarificationTurn as runSessionTurn,
+  temporaryManager,
+} from './helpers.js';
 import { answer, initialRound } from './round-helpers.js';
 
 const settings = { api_key: 'offline', model: 'fake', max_tool_use_turns: 20 };
@@ -70,10 +75,12 @@ describe('Session v5 新目录与组合离线 Eval', () => {
       const client: ModelClient = {
         lastUsage: { input_tokens: 11, output_tokens: 7 },
         countTokens: async (messages, tools, system) => {
-          if (tools.length) {
-            expect(system).toBe(ROUND_SYSTEM);
+          if (tools.length && system === ROUND_SYSTEM) {
             expect(tools.map((tool) => tool.name)).toContain('publish_clarification_round');
             expect(tools.map((tool) => tool.name)).not.toContain('request_clarification');
+          } else if (tools.length) {
+            expect(system).toBe(CHAT_SYSTEM);
+            expect(tools.map((tool) => tool.name)).not.toContain('publish_clarification_round');
           }
           return estimateContextUsage(messages, tools, system).usedTokens;
         },

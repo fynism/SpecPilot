@@ -107,7 +107,11 @@ describe('六个原有场景的离线执行契约与评分', () => {
         calls.push((input as ToolCall).name);
       });
       fixture.manager.beginTurn(scenario.user_input);
-      await runtime.run(fixture.manager.messages, !isClarificationStopRequest(scenario.user_input));
+      await runtime.run(
+        fixture.manager.messages,
+        !isClarificationStopRequest(scenario.user_input),
+        false,
+      );
       fixture.manager.completeTurn();
       const spec = fixture.manager.currentSpec();
       const score = scoreTrace(scenario, {
@@ -177,7 +181,7 @@ it.skipIf(process.env.SPECPILOT_RUN_LIVE_EVALS !== '1')(
         () => undefined,
       );
       fixture.manager.beginTurn(scenario.user_input);
-      await runtime.run(fixture.manager.messages);
+      await runtime.run(fixture.manager.messages, true, false);
       const spec = fixture.manager.currentSpec();
       expect(
         scoreTrace(scenario, {

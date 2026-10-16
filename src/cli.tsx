@@ -20,13 +20,14 @@ ANTHROPIC_BASE_URL 和 MAX_TOOL_USE_TURNS。
 /switch [session-id]   选择或直接切换 Session
 /rename <标题>        重命名当前 Session
 /status               显示 Session 和 Spec 状态
-/clarify              查看跨轮总览、编辑答案并按轮提交
+/clarify [需求描述]   带描述开始梳理需求；无参数查看已有进度
 /compact              手动压缩当前上下文，保留原始历史
 /done                 结束澄清，只总结已有信息
 /language [zh-CN|en-US] 切换全屏界面语言
 /quit                 退出
 
 交互终端使用 Ink 全屏；管道与 CI 使用逐行控制台。
+普通输入仅进行聊天与只读调查，不修改 Spec；通过澄清面板提交答案继续需求处理。
 状态保存在 .specpilot/sessions-v5/；导出在 .specpilot/specs/。
 `;
 

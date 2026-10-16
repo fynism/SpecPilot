@@ -5,18 +5,19 @@ import {
   type ClarificationRequest,
 } from '../../capabilities/clarification/models.js';
 import { ClarificationCancelled } from '../../capabilities/clarification/tool.js';
+import { ClarificationIntakeError } from '../../runtime/agent.js';
 import {
   buildContextMessages,
   type ContextUsage,
   estimateContextUsage,
 } from '../../runtime/context/index.js';
 import { ContextLimitError, TokenCountError } from '../../runtime/model.js';
-import { SYSTEM } from '../../runtime/prompts.js';
+import { CHAT_SYSTEM } from '../../runtime/prompts.js';
 import type { SessionManager } from '../../runtime/session/manager.js';
 import { compactSession, runSessionTurn } from '../../runtime/turn.js';
 import type { RuntimeFactory } from './app.js';
 import { runClarificationConsole } from './clarification-console.js';
-import { handleSessionCommand, statusText } from './commands.js';
+import { handleSessionCommand, hasClarificationProgress, statusText } from './commands.js';
 import {
   contextUsageText,
   readableTranscript,
@@ -95,8 +96,8 @@ export async function runConsole(
     stdout.write(`${safeTerminalText(text, true)}\n`);
   };
   const presenter = new ConsoleClarificationPresenter(input, emit);
-  const run = async (query: string) => {
-    const reason = await runSessionTurn(manager, runtimeFactory(presenter, emit), query);
+  const run = async (query: string, source: 'chat' | 'clarification' = 'chat') => {
+    const reason = await runSessionTurn(manager, runtimeFactory(presenter, emit), query, source);
     if (reason === 'max_tool_use_turns') emit('本轮达到工具调用上限，可继续下一轮。');
     const last = manager.messages.at(-1);
     if (last?.role === 'assistant')
@@ -111,7 +112,7 @@ export async function runConsole(
       presenter,
       async (query) => {
         try {
-          await run(query);
+          return await run(query, 'clarification');
         } catch (error) {
           emit(
             `Agent 运行失败：${error instanceof Error ? error.name : 'UnknownError'}；提交已保留，可显式重试。`,
@@ -138,7 +139,7 @@ export async function runConsole(
         estimateContextUsage(
           buildContextMessages(manager.messages, manager.context, manager.currentSpec()),
           [],
-          SYSTEM,
+          CHAT_SYSTEM,
         );
       emit(contextUsageText(usage, 'zh-CN'));
       emit(tokenConsumptionText(manager.current.token_usage, 'zh-CN'));
@@ -146,7 +147,8 @@ export async function runConsole(
       const query = await input.read();
       if (query === null || ['q', 'exit', ''].includes(query.trim().toLowerCase())) return;
       if (query.trim().toLowerCase() === '/clarify') {
-        await clarify();
+        if (hasClarificationProgress(manager)) await clarify();
+        else emit('请使用 /clarify <需求描述> 开始梳理需求。');
         continue;
       }
       if (query.trim().toLowerCase() === '/switch') {
@@ -198,7 +200,9 @@ export async function runConsole(
         if (reason === 'clarification_round_ready') await clarify();
       } catch (error) {
         const failure =
-          error instanceof ContextLimitError || error instanceof TokenCountError
+          error instanceof ContextLimitError ||
+          error instanceof TokenCountError ||
+          error instanceof ClarificationIntakeError
             ? error.message
             : error instanceof Error
               ? error.name

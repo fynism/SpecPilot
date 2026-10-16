@@ -9,8 +9,10 @@ import type {
 import { answerSchema } from '../src/capabilities/clarification/models.js';
 import type { SpecToolService } from '../src/capabilities/spec/operations.js';
 import { LocalSessionStore } from '../src/integrations/filesystem/session-store.js';
+import type { AgentRuntime } from '../src/runtime/agent.js';
 import type { ModelBlock, ModelClient } from '../src/runtime/model.js';
 import { SessionManager } from '../src/runtime/session/manager.js';
+import { runSessionTurn } from '../src/runtime/turn.js';
 import type { ToolSpec } from '../src/tooling/contracts.js';
 
 export const clarification: ClarificationInput = {
@@ -98,3 +100,16 @@ export function required<T>(value: T | null | undefined): T {
   if (value === null || value === undefined) throw new Error('测试缺少必要 fixture');
   return value;
 }
+
+/** 机制测试显式模拟宿主的答案处理来源；普通聊天及命令入口另行走公开路径测试。 */
+export function runClarificationTurn(
+  manager: SessionManager,
+  runtime: AgentRuntime,
+  query: string,
+) {
+  return runSessionTurn(manager, runtime, query, 'clarification');
+}
+
+export const readyIntake: ModelBlock[] = [
+  { type: 'text', text: JSON.stringify({ kind: 'ready', message: '需求对象明确' }) },
+];

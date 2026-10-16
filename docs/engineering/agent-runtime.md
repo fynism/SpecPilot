@@ -35,7 +35,7 @@ build context → call model → validate action → evaluate policy
 ### 当前 Session 恢复边界
 
 当前 CLI 已支持在一个 worktree 中保存和切换多个 Session。每个 Session 独占消息历史与
-结构化 Spec，普通输入仍运行传统 Agent Loop。切换只发生在 CLI 等待用户输入时；本地快照在
+结构化 Spec，普通输入运行只读 Agent Loop。切换只发生在 CLI 等待用户输入时；本地快照在
 进入 Loop 前记录 `running` 和当前请求，在完整 Loop 返回后记录 `waiting_for_user`。
 
 启动时发现遗留 `running` 状态，必须转换为 `interrupted` 并提示用户，不自动重放模型或工具
@@ -58,6 +58,14 @@ Session 选择和 Clarification；`@inkjs/ui` 提供选择列表与运行状态�
 默认 CLI 使用多轮澄清总览。`publish_clarification_round` 是非阻塞工具；发布成功后
 Runtime 将当批所有 tool_use 配对为 tool_result，拒绝剩余调用，返回
 `clarification_round_ready`。发布校验失败不能触发这一停止原因。
+普通聊天只公开只读工具，Executor 在执行前同样拒绝未公开的写调用；只读轮次不得消费
+已提交答案、写入 Evidence、撤回 Spec 就绪状态或标记提交重试。`/clarify <需求描述>` 先通过
+同一计量模型、空工具集执行严格结构化入口判断；只有通过后才处理需求。不从聊天历史提取
+候选需求，无参数 `/clarify` 只查看已有进度。面板提交与重试由宿主标记为澄清来源，不能根据
+用户粘贴的 JSON 识别权限。轮次来源仅存于当前运行，不改变 Session v5、Spec v2。
+
+发布空轮次后复用宿主就绪判定：就绪返回 `clarification_completed`，否则返回
+`clarification_incomplete`；两个前端回到对话展示摘要或具体缺口，不弹空问卷，也不自动导出。
 用户在轮次之间编辑、暂缓和提交答案，填写期间不调用模型；下一次运行统一调查、记录 Spec
 和准备追问。轮次发布与 Spec 变更随完整 Loop 一次保存，失败回退并保留用户提交。
 总览读取、轮次发布及 Spec 操作均进入统一 Tool 管线，不能由 UI 绕过领域校验。

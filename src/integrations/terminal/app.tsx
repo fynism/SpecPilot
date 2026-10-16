@@ -7,18 +7,22 @@ import type {
   ClarificationRequest,
 } from '../../capabilities/clarification/models.js';
 import { ClarificationCancelled } from '../../capabilities/clarification/tool.js';
-import type { AgentRuntime, StopReason } from '../../runtime/agent.js';
+import {
+  type AgentRuntime,
+  ClarificationIntakeError,
+  type StopReason,
+} from '../../runtime/agent.js';
 import {
   buildContextMessages,
   type ContextUsage,
   estimateContextUsage,
 } from '../../runtime/context/index.js';
 import { ContextLimitError, TokenCountError } from '../../runtime/model.js';
-import { SYSTEM } from '../../runtime/prompts.js';
+import { CHAT_SYSTEM } from '../../runtime/prompts.js';
 import type { SessionManager } from '../../runtime/session/manager.js';
 import { compactSession, runSessionTurn } from '../../runtime/turn.js';
 import { ClarificationBoard } from './clarification-board.js';
-import { commands, handleSessionCommand } from './commands.js';
+import { commands, handleSessionCommand, hasClarificationProgress } from './commands.js';
 import { type Locale, resolveLocale, type TextKey, translate } from './i18n.js';
 import { InputLine } from './input.js';
 import { ClarificationOverlay, LanguageOverlay, SessionOverlay } from './overlays.js';
@@ -105,12 +109,16 @@ export function TerminalApp({
       refresh((r) => r + 1);
     }
   };
-  const submit = async (query: string): Promise<void> => {
+  const submit = async (
+    query: string,
+    source: 'chat' | 'clarification' = 'chat',
+  ): Promise<void> => {
+    if (busyRef.current || !query.trim()) return;
     if (query.trim().toLowerCase() === '/clarify') {
-      setOverlay('clarify');
+      if (hasClarificationProgress(manager)) setOverlay('clarify');
+      else setNotice(t('notice.clarify_usage'));
       return;
     }
-    if (busyRef.current || !query.trim()) return;
     if (query === '/done') setOverlay(null);
     setEpoch((e) => e + 1);
     setPrefix('');
@@ -150,9 +158,11 @@ export function TerminalApp({
       const runtime = runtimeFactory(presenter, emit);
       let reason: StopReason | 'stop' = 'model_complete';
       if (compacting) await compactSession(manager, runtime);
-      else reason = await runSessionTurn(manager, runtime, query);
+      else reason = await runSessionTurn(manager, runtime, query, source);
       if (mounted.current) {
         if (reason === 'clarification_round_ready') setOverlay('clarify');
+        else if (reason === 'clarification_completed' || reason === 'clarification_incomplete')
+          setOverlay(null);
         setStatus(reason === 'max_tool_use_turns' ? 'status.tool_limit' : 'status.waiting');
         refresh((r) => r + 1);
       }
@@ -162,7 +172,9 @@ export function TerminalApp({
         setNotice(
           t(compacting ? 'status.compaction_failure' : 'status.failure', {
             error:
-              error instanceof ContextLimitError || error instanceof TokenCountError
+              error instanceof ContextLimitError ||
+              error instanceof TokenCountError ||
+              error instanceof ClarificationIntakeError
                 ? error.message
                 : error instanceof Error
                   ? error.name
@@ -225,7 +237,11 @@ export function TerminalApp({
   const spec = manager.currentSpec();
   const usage =
     getUsage?.() ??
-    estimateContextUsage(buildContextMessages(manager.messages, manager.context, spec), [], SYSTEM);
+    estimateContextUsage(
+      buildContextMessages(manager.messages, manager.context, spec),
+      [],
+      CHAT_SYSTEM,
+    );
   const candidates =
     prefix.startsWith('/') && !/\s/.test(prefix)
       ? commands.filter((c) => c.startsWith(prefix.toLowerCase()))
@@ -276,7 +292,7 @@ export function TerminalApp({
             height={viewHeight}
             onClose={() => setOverlay(null)}
             onRun={(query) => {
-              void submit(query);
+              void submit(query, 'clarification');
             }}
             onChange={() => refresh((r) => r + 1)}
           />
