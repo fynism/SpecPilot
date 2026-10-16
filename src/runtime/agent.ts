@@ -16,6 +16,7 @@ import {
   type ModelBlock,
   type ModelClient,
   modelBlockSchema,
+  TokenCountError,
 } from './model.js';
 import {
   CHAT_SYSTEM,
@@ -78,7 +79,14 @@ export class AgentRuntime {
   }
   /** 返回普通对话前，按下一次只读请求刷新窗口计数。 */
   async refreshForChat(messages: Message[]): Promise<void> {
-    await this.context.refresh(messages, this.registry.toolSpecs(true), CHAT_SYSTEM);
+    try {
+      await this.context.refresh(messages, this.registry.toolSpecs(true), CHAT_SYSTEM);
+    } catch (error) {
+      // 本轮已经完成，下一轮窗口的显示刷新失败不能撤回已生成的回答或已发布的轮次。
+      // 发送前 prepare 仍严格计数；这里只提示暂不可用，不伪造计数或吞掉存储等其他错误。
+      if (!(error instanceof TokenCountError)) throw error;
+      this.emit(`本轮输出已保留；上下文计数暂不可用，下次发送前会重新检查。${error.message}`);
+    }
   }
   /** 入口判断共用计量模型，但不把 JSON 判断结果写成用户事实。 */
   async assessClarification(data: {

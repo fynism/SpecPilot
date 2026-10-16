@@ -77,7 +77,10 @@ export class AnthropicModelClient implements ModelClient {
         this.countingUnsupported = true;
         return null;
       }
-      throw new TokenCountError('供应商 Token 计数失败，请检查服务连接或稍后重试。', {
+      // 仅暴露 HTTP 状态供定位代理/服务问题；响应正文、请求、密钥不进入提示。
+      const status =
+        error instanceof Anthropic.APIError && error.status ? `（HTTP ${error.status}）` : '';
+      throw new TokenCountError(`供应商 Token 计数失败${status}，请检查服务连接或稍后重试。`, {
         cause: error,
       });
     }
