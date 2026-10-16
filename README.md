@@ -69,7 +69,7 @@ Ctrl+End 恢复跟随最新消息，以及 Ctrl+Q 退出。用户和 Agent 按�
 Session 选择每页 10 项，PgUp/PgDn 或 p/n 翻页，Enter 明确确认，Esc 取消。
 
 Agent 先调查仓库，再发布本轮问题并返回澄清总览。总览包含全部已识别主题和待细化事项，
-每轮默认推荐三题、最多五题。用户可任意顺序作答、暂缓或回改；编辑期间不调用模型。
+每轮按依赖与优先级自适应发布一至三题，不为填满轮次而追加问题。用户可任意顺序作答、暂缓或回改；编辑期间不调用模型。
 答案先保存为草稿，按 `c` 才统一提交给下一轮 Agent；草稿和补充说明重启后仍保留。
 
 总览按 `Tab` 切换本轮／全部主题，方向键与 PgUp/PgDn 导航，Enter 编辑问题或展开主题；
@@ -110,29 +110,22 @@ Runtime 不向模型开放工具，也会拒绝异常返回的工具调用；未
 
 - 默认九个工具：仓库调查三项、总览读取与轮次发布两项、Spec 读取／Patch／校验／导出四项；
 - 原阻塞式单题澄清服务保留兼容契约，但默认 CLI 不向模型暴露该工具；
-- Spec 保留目标、范围、需求、决策、假设、未决问题、验收条件和证据；Zod 严格校验输入及引用；
+- 精简 Spec 保留单一目标、边界、需求（内含验收示例）、用户确认的产品决策和来源证据；未决问题留在澄清总览；
 - Spec 采用乐观版本校验和整批 Patch 提交，非法修改不影响旧状态；
 - 每个 Session 独占历史与 Spec，重启恢复上次活动项；未完成轮次标记中断并且不自动重放；
 - 文件路径在解析符号链接后复验工作区边界，状态文件采用同目录临时文件加原子替换；
 - 语言切换只改变当前进程的 UI 文案，不翻译历史、Spec、系统提示或模型回答。
 
-Session 统一写入 v4，同时保存澄清总览、压缩上下文和实际 Token 消耗。旧 Python v1、
-澄清分支 v2、压缩分支 v2/v3 均可读取；两个 v2 按完整字段严格区分，不丢弃已有数据。
-首次保存升级前保留同目录 `session.json.v1.bak`、`.v2.bak` 或 `.v3.bak`，已有备份不覆盖。
-旧会话没有统计的实际消耗标记为历史未知，新调用继续累加。Spec 与索引仍为 v1，
-ID、版本历史及目录布局保持兼容：
+Session v5 保存精简 Spec v2、澄清总览、压缩上下文和实际 Token 消耗。旧格式不自动迁移；旧目录内容保持原样，需由旧版本程序读取。新目录为：
 
 ```text
-.specpilot/sessions/index.json
-.specpilot/sessions/<session_id>/session.json
-.specpilot/sessions/<session_id>/session.json.v1.bak
+.specpilot/sessions-v5/index.json
+.specpilot/sessions-v5/<session_id>/session.json
 .specpilot/specs/<spec_id>/spec.json
 .specpilot/specs/<spec_id>/SPEC.md
 ```
 
-旧程序不能读取 Session v4。回退前另存当前 v4 快照，再恢复与旧程序对应的版本备份；
-备份之后的交互数据不会出现在旧程序中。迁移保持幂等，不自动重放模型或工具动作，
-详见 [状态与记忆](docs/engineering/state-and-memory.md)。
+旧程序不会读取 v5 新目录；回退后 v5 期间产生的交互数据不会出现在旧程序中。详见 [状态与记忆](docs/engineering/state-and-memory.md)。
 
 Python CLI、`code.py`、pip/uv 依赖与旧 Python 测试已移除；使用上面的 npm 命令启动。
 `.env` 现在从**启动工作区**读取，npm 安装位置不作为配置根目录。

@@ -38,7 +38,7 @@
 - **Blocking ambiguity recall**：高影响歧义被发现的比例；
 - **Unnecessary question rate**：可调查或低影响问题却打扰用户的比例；
 - **Decision grounding**：Decision 有有效来源的比例；
-- **Spec acceptance coverage**：Requirement 被 Acceptance 覆盖的比例；
+- **Spec acceptance coverage**：关键 Requirement 含有可验证验收示例的比例；
 - **Trace coverage**：验收项关联实现和测试证据的比例；
 - **Task success**：最终行为满足 Spec 的比例；
 - **Rework delta**：与直接交给 Coding Agent 相比的返工变化；
