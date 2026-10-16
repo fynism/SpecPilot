@@ -6,7 +6,7 @@ import {
   ClarificationStopController,
   isClarificationStopRequest,
 } from '../src/capabilities/clarification/policy.js';
-import { entityFields } from '../src/capabilities/spec/models.js';
+import type { Specification } from '../src/capabilities/spec/models.js';
 import { loadSettings } from '../src/config.js';
 import { loadEvalCases, scoreTrace } from '../src/evaluation/scoring.js';
 import { AnthropicModelClient } from '../src/integrations/anthropic/model.js';
@@ -28,16 +28,15 @@ import {
 
 const cases = loadEvalCases(resolve('evals/cases.json'));
 const settings = { api_key: 'offline', model: 'fake', max_tool_use_turns: 20 };
-const names = {
-  goals: 'goal',
-  scope: 'scope',
-  requirements: 'requirement',
-  decisions: 'decision',
-  assumptions: 'assumption',
-  open_questions: 'open_question',
-  acceptance_criteria: 'acceptance_criterion',
-  evidence: 'evidence',
-} as const;
+function specEntities(spec: Specification): string[] {
+  return [
+    ...(spec.goal ? ['goal'] : []),
+    ...(spec.boundaries.length ? ['boundary'] : []),
+    ...(spec.requirements.length ? ['requirement'] : []),
+    ...(spec.decisions.length ? ['decision'] : []),
+    ...(spec.evidence.length ? ['evidence'] : []),
+  ];
+}
 
 describe('六个原有场景的离线执行契约与评分', () => {
   it('数据集类别、fixture 和四项评分保持兼容', () => {
@@ -84,17 +83,6 @@ describe('六个原有场景的离线执行契约与评分', () => {
           ),
         ]);
       if (scenario.id !== 'explicit_clarification_stop') {
-        if (scenario.id === 'low_impact_filename')
-          patch.operations = [
-            {
-              op: 'put_assumption',
-              id: 'A-001',
-              statement: '导出文件名使用 export.csv',
-              confidence: 0.8,
-              impact: '低影响可修改',
-              invalidation_condition: '用户提出新的命名要求',
-            },
-          ];
         responses.push([call('patch', 'apply_spec_patch', patch)]);
         if (scenario.expectation.required_tools.includes('validate_spec'))
           responses.push([call('validate', 'validate_spec')]);
@@ -125,9 +113,7 @@ describe('六个原有场景的离线执行契约与评分', () => {
       const score = scoreTrace(scenario, {
         tools: calls,
         clarification_count: count,
-        spec_entities: [...entityFields, 'evidence' as const]
-          .filter((field) => spec[field].length)
-          .map((field) => names[field]),
+        spec_entities: specEntities(spec),
       });
       expect(score.violations).toEqual([]);
       const results = fixture.manager.messages.flatMap((m) =>
@@ -197,9 +183,7 @@ it.skipIf(process.env.SPECPILOT_RUN_LIVE_EVALS !== '1')(
         scoreTrace(scenario, {
           tools: calls,
           clarification_count: clarificationCount,
-          spec_entities: [...entityFields, 'evidence' as const]
-            .filter((field) => spec[field].length)
-            .map((field) => names[field]),
+          spec_entities: specEntities(spec),
         }).violations,
       ).toEqual([]);
     } finally {

@@ -67,13 +67,7 @@ export function completePatch(service: SpecToolService): Record<string, unknown>
         op: 'put_requirement',
         id: 'R-001',
         statement: '管理员导出',
-        acceptance_criterion_ids: ['AC-001'],
-      },
-      {
-        op: 'put_acceptance_criterion',
-        id: 'AC-001',
-        statement: '获得文件',
-        requirement_ids: ['R-001'],
+        acceptance_examples: ['管理员获得 CSV 文件'],
       },
       {
         op: 'record_evidence',

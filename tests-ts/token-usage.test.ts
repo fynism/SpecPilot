@@ -352,11 +352,10 @@ describe('实际消耗、窗口计数与恢复的离线场景 Eval', () => {
       const legacy: Record<string, unknown> = { ...fixture.manager.current, schema_version: 2 };
       delete legacy.token_usage;
       delete legacy.clarification_plan;
-      const migrated = sessionSchema.parse(legacy);
-      expect(migrated.schema_version).toBe(4);
-      expect(migrated.token_usage.historical_usage_unknown).toBe(true);
-      expect(sessionSchema.parse(migrated)).toEqual(migrated);
-      expect(() => sessionSchema.parse({ ...migrated, token_usage: undefined })).toThrow();
+      expect(() => sessionSchema.parse(legacy)).toThrow();
+      expect(() =>
+        sessionSchema.parse({ ...fixture.manager.current, token_usage: undefined }),
+      ).toThrow();
       expect(() => sessionSchema.parse({ ...legacy, schema_version: '2' })).toThrow();
     } finally {
       fixture.cleanup();

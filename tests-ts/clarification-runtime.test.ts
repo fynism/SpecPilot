@@ -42,7 +42,7 @@ describe('默认 Runtime 多轮边界', () => {
       const result = f.manager.messages
         .flatMap((m) => (typeof m.content === 'string' ? [] : m.content))
         .find((b) => b.type === 'tool_result' && b.tool_use_id === 'premature');
-      expect(result).toMatchObject({ content: expect.stringContaining('clarification_pending') });
+      expect(result).toMatchObject({ content: expect.stringContaining('Invalid option') });
       expect(f.manager.currentSpec().version).toBe(1);
     } finally {
       f.cleanup();

@@ -78,7 +78,7 @@ export class SessionManager {
   get clarification(): ClarificationPlanService {
     return this.clarificationService();
   }
-  clarificationService(published?: () => void): ClarificationPlanService {
+  clarificationService(published?: (hasQuestions: boolean) => void): ClarificationPlanService {
     return new ClarificationPlanService(
       this.require().record.session_id,
       () => this.require().record.clarification_plan,

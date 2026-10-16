@@ -31,15 +31,15 @@ export class LocalSessionStore implements SessionStore {
   private readonly root: string;
   constructor(workspace: string) {
     this.root = workspaceRoot(workspace);
-    boundedPath(this.root, '.specpilot/sessions');
+    boundedPath(this.root, '.specpilot/sessions-v5');
   }
   private path(id: string): string {
     if (!sessionIdSchema.safeParse(id).success)
       throw new SessionNotFoundError('Session ID 格式无效');
-    return boundedPath(this.root, `.specpilot/sessions/${id}/session.json`);
+    return boundedPath(this.root, `.specpilot/sessions-v5/${id}/session.json`);
   }
   private indexPath(): string {
-    return boundedPath(this.root, '.specpilot/sessions/index.json');
+    return boundedPath(this.root, '.specpilot/sessions-v5/index.json');
   }
   private index(): SessionIndex {
     const path = this.indexPath();
@@ -66,7 +66,7 @@ export class LocalSessionStore implements SessionStore {
       atomicWrite(
         this.root,
         this.path(session.data.session_id),
-        this.backupLegacy(session.data.session_id, session.data),
+        `${JSON.stringify(session.data, null, 2)}\n`,
       );
       if (!index.session_ids.includes(session.data.session_id)) {
         index.session_ids.push(session.data.session_id);
@@ -75,19 +75,6 @@ export class LocalSessionStore implements SessionStore {
     } catch (error) {
       throw new SessionStorageError('无法安全写入 Session 文件', { cause: error });
     }
-  }
-  private backupLegacy(id: string, session: SessionRecord): string {
-    const path = this.path(id);
-    if (existsSync(path)) {
-      const original = readFileSync(path, 'utf8');
-      const version: unknown = JSON.parse(original).schema_version;
-      // 升级前保留旧格式原始字节；不覆盖已有备份，也不从未校验字段构造路径。
-      if (version === 1 || version === 2 || version === 3) {
-        const backup = `${path}.v${version}.bak`;
-        if (!existsSync(backup)) atomicWrite(this.root, backup, original);
-      }
-    }
-    return `${JSON.stringify(session, null, 2)}\n`;
   }
   load(id: string): SessionRecord {
     const path = this.path(id);

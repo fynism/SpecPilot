@@ -4,37 +4,22 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { createSpecification, specificationSchema } from '../src/capabilities/spec/models.js';
 import { loadSettings } from '../src/config.js';
-import { FINAL_RESPONSE_SYSTEM_SUFFIX, SYSTEM } from '../src/runtime/prompts.js';
+import { FINAL_RESPONSE_SYSTEM_SUFFIX, ROUND_SYSTEM, SYSTEM } from '../src/runtime/prompts.js';
 import { sessionSchema } from '../src/runtime/session/models.js';
-import { emptyTokenLedger } from '../src/runtime/usage.js';
 
 describe('严格契约与兼容配置', () => {
-  it('模型角色与工具边界提示逐字保留原 Python 版本', () => {
-    const prompts = JSON.parse(
-      readFileSync(new URL('./fixtures/python-prompts.json', import.meta.url), 'utf8'),
-    );
-    expect({ SYSTEM, FINAL_RESPONSE_SYSTEM_SUFFIX }).toEqual(prompts);
+  it('提示词包含精简 Spec 和持续追问边界', () => {
+    expect(SYSTEM).toContain('Ask one pivotal question');
+    expect(SYSTEM).toContain('Never turn a recommendation into a user decision');
+    expect(ROUND_SYSTEM).toContain('depends_on');
+    expect(FINAL_RESPONSE_SYSTEM_SUFFIX).toContain('No tools are available');
   });
-  it('读取真实 Python 序列化的 Session 与连续 Spec 历史', () => {
+  it('旧 Session 格式不再自动迁移，当前格式严格校验', () => {
     const original = JSON.parse(
       readFileSync(new URL('./fixtures/python-session-v1.json', import.meta.url), 'utf8'),
     );
-    const migrated = sessionSchema.parse(original);
-    expect(migrated).toEqual({
-      ...original,
-      schema_version: 4,
-      clarification_plan: migrated.clarification_plan,
-      context: { summary: '', through: 0, compactions: [] },
-      token_usage: emptyTokenLedger(true),
-    });
-    expect(migrated.clarification_plan.questions).toEqual([]);
-    expect(() => sessionSchema.parse({ ...original, schema_version: 2 })).toThrow();
-    expect(sessionSchema.parse(migrated)).toEqual(migrated);
-    expect(() => sessionSchema.parse({ ...original, schema_version: 5 })).toThrow();
-    expect(() => sessionSchema.parse({ ...original, status: 'running' })).toThrow();
-    expect(() =>
-      sessionSchema.parse({ ...original, spec_versions: [...original.spec_versions].reverse() }),
-    ).toThrow();
+    expect(() => sessionSchema.parse(original)).toThrow();
+    expect(() => sessionSchema.parse({ ...original, schema_version: 4 })).toThrow();
   });
   it('保留版本、ID 和 JSON 时间，拒绝额外字段及类型转换', () => {
     const spec = createSpecification('需求', '2026-09-15T00:00:00+00:00');
@@ -42,7 +27,7 @@ describe('严格契约与兼容配置', () => {
     expect(() => specificationSchema.parse({ ...spec, version: '1' })).toThrow();
     expect(() => specificationSchema.parse({ ...spec, surprise: 1 })).toThrow();
   });
-  it('用户决策必须引用用户证据，BDD 场景必须完整', () => {
+  it('用户决策必须引用用户证据，验收示例归属于需求', () => {
     const spec = createSpecification('需求');
     expect(() =>
       specificationSchema.parse({
@@ -58,14 +43,21 @@ describe('严格契约与兼容配置', () => {
         ],
       }),
     ).toThrow('用户决策');
-    expect(() =>
+    expect(
       specificationSchema.parse({
         ...spec,
-        acceptance_criteria: [
-          { id: 'AC-001', statement: '可验收', requirement_ids: ['R-001'], given: '前提' },
+        goal: { id: 'G-001', statement: '导出记录', evidence_ids: [], lifecycle: 'active' },
+        requirements: [
+          {
+            id: 'R-001',
+            statement: '管理员可导出',
+            evidence_ids: [],
+            lifecycle: 'active',
+            acceptance_examples: ['获得 CSV 文件'],
+          },
         ],
-      }),
-    ).toThrow();
+      }).requirements[0]?.acceptance_examples,
+    ).toEqual(['获得 CSV 文件']);
   });
   it('工作区 .env 优先，整数预算严格校验，错误不泄漏密钥', () => {
     const root = mkdtempSync(join(tmpdir(), 'specpilot-config-'));

@@ -120,11 +120,7 @@ describe('多轮澄清领域状态', () => {
           typeof f.manager.specTools.applySpecPatch
         >[0],
       );
-      f.manager.specTools.applySpecPatch({
-        expected_version: f.manager.currentSpec().version,
-        change_reason: '准备审阅',
-        operations: [{ op: 'set_spec_metadata', title: null, status: 'ready_for_approval' }],
-      });
+      f.manager.specTools.finishClarificationRound(false);
       f.manager.clarification.publish(initialRound());
       answer(f.manager, 'users', '"'.repeat(1000));
       const query = required(f.manager.submitClarification('changed_answer'));
@@ -320,19 +316,13 @@ describe('多轮澄清领域状态', () => {
       answer(f.manager, 'users', '所有用户都可以');
       expect(f.manager.clarification.get().questions[0]?.status).toBe('review_needed');
       expect(f.manager.clarification.get().review_entity_ids).toContain('D-001');
-      expect(() =>
-        f.manager.specTools.applySpecPatch({
-          expected_version: f.manager.currentSpec().version,
-          change_reason: '不能提前批准',
-          operations: [{ op: 'set_spec_metadata', title: null, status: 'ready_for_approval' }],
-        }),
-      ).toThrow('澄清');
+      expect(JSON.parse(f.manager.specTools.validateSpec()).ready_for_approval).toBe(false);
       expect(f.manager.clarification.get().answers).toHaveLength(2);
     } finally {
       f.cleanup();
     }
   });
-  it('迁移 v1 备份只写一次，历史保持不变，新 Session 总览互相隔离', () => {
+  it('旧目录不自动迁移，新 Session 总览互相隔离', () => {
     const f = temporaryManager();
     try {
       const old = JSON.parse(
@@ -344,12 +334,8 @@ describe('多轮澄清领域状态', () => {
       const bytes = JSON.stringify(old);
       writeFileSync(path, bytes);
       const store = new LocalSessionStore(f.root);
-      const migrated = store.load(old.session_id);
-      expect(migrated.schema_version).toBe(4);
-      expect(migrated.messages).toEqual(old.messages);
-      store.save(migrated);
-      store.save(migrated);
-      expect(readFileSync(`${path}.v1.bak`, 'utf8')).toBe(bytes);
+      expect(() => store.load(old.session_id)).toThrow('Session 不存在');
+      expect(readFileSync(path, 'utf8')).toBe(bytes);
       f.manager.clarification.publish(initialRound());
       const original = f.manager.current.session_id;
       f.manager.create('独立会话');

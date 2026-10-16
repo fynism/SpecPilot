@@ -10,7 +10,7 @@
       "forbidden_tools": ["request_clarification"],
       "min_clarifications": 0,
       "max_clarifications": 0,
-      "required_spec_entities": ["goal", "requirement", "acceptance_criterion"]
+      "required_spec_entities": ["goal", "requirement"]
     }
   },
   {
@@ -44,7 +44,7 @@
   {
     "id": "low_impact_filename",
     "category": "低影响可撤销选择",
-    "user_input": "文件名你先选一个合理默认值。",
+    "user_input": "文件名先不指定，留待后续确定。",
     "fixture": "evals/fixtures/export_project",
     "scoring": "deterministic_trace_v1",
     "expectation": {
@@ -52,7 +52,7 @@
       "forbidden_tools": ["request_clarification"],
       "min_clarifications": 0,
       "max_clarifications": 0,
-      "required_spec_entities": ["assumption"]
+      "required_spec_entities": []
     }
   },
   {

@@ -26,62 +26,22 @@ function longHistory(manager: SessionManager): void {
   manager.completeTurn();
 }
 
-describe('Session v4 合并兼容与组合离线 Eval', () => {
-  it.each([
-    'clarification-v2',
-    'context-v2',
-    'context-v3',
-  ] as const)('严格迁移 %s，保留原字段并只备份一次', async (kind) => {
+describe('Session v5 新目录与组合离线 Eval', () => {
+  it('拒绝旧格式并保留旧目录内容', async () => {
     const f = temporaryManager();
     try {
-      longHistory(f.manager);
-      f.manager.clarification.publish(initialRound());
-      answer(f.manager, 'users', '仅管理员，必须审计');
-      f.manager.setClarificationNote('补充草稿');
-      const runtime = buildSessionRuntime(
-        f.manager,
-        f.root,
-        settings,
-        recommendedPresenter,
-        () => undefined,
-        {
-          lastUsage: { input_tokens: 11, output_tokens: 7 },
-          createMessage: async () => [{ type: 'text', text: '旧资料摘要：仅允许管理员导出。' }],
-        },
+      const legacy = JSON.parse(
+        readFileSync(new URL('./fixtures/python-session-v1.json', import.meta.url), 'utf8'),
       );
-      await compactSession(f.manager, runtime);
-      const original = f.manager.current;
-      const legacy: Record<string, unknown> = {
-        ...original,
-        schema_version: kind === 'context-v3' ? 3 : 2,
-      };
-      if (kind === 'clarification-v2') delete legacy.context;
-      else delete legacy.clarification_plan;
-      if (kind !== 'context-v3') delete legacy.token_usage;
-      const path = join(f.root, '.specpilot/sessions', original.session_id, 'session.json');
+      const directory = join(f.root, '.specpilot/sessions', legacy.session_id);
+      const path = join(directory, 'session.json');
       const bytes = JSON.stringify(legacy);
+      (await import('node:fs')).mkdirSync(directory, { recursive: true });
       writeFileSync(path, bytes);
       const store = new LocalSessionStore(f.root);
-      const migrated = store.load(original.session_id);
-      expect(migrated.schema_version).toBe(4);
-      expect(migrated.messages).toEqual(original.messages);
-      expect(migrated.spec_versions).toEqual(original.spec_versions);
-      if (kind === 'clarification-v2') {
-        expect(migrated.clarification_plan).toEqual(original.clarification_plan);
-        expect(migrated.context.through).toBe(0);
-      } else {
-        expect(migrated.context).toEqual(original.context);
-        expect(migrated.clarification_plan.questions).toEqual([]);
-      }
-      if (kind === 'context-v3') expect(migrated.token_usage).toEqual(original.token_usage);
-      else expect(migrated.token_usage.historical_usage_unknown).toBe(true);
-      store.save(migrated);
-      store.save(migrated);
-      expect(readFileSync(`${path}.v${legacy.schema_version}.bak`, 'utf8')).toBe(bytes);
-      expect(store.load(original.session_id)).toEqual(migrated);
-      expect(sessionSchema.parse(migrated)).toEqual(migrated);
-      expect(() => sessionSchema.parse({ ...legacy, surprise: true })).toThrow();
-      expect(() => sessionSchema.parse({ ...legacy, schema_version: '2' })).toThrow();
+      expect(() => store.load(legacy.session_id)).toThrow('Session 不存在');
+      expect(readFileSync(path, 'utf8')).toBe(bytes);
+      expect(f.manager.current.schema_version).toBe(5);
     } finally {
       f.cleanup();
     }

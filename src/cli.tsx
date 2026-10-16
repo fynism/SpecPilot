@@ -27,7 +27,7 @@ ANTHROPIC_BASE_URL 和 MAX_TOOL_USE_TURNS。
 /quit                 退出
 
 交互终端使用 Ink 全屏；管道与 CI 使用逐行控制台。
-状态保存在 .specpilot/sessions/；导出在 .specpilot/specs/。
+状态保存在 .specpilot/sessions-v5/；导出在 .specpilot/specs/。
 `;
 
 /** npm 可执行入口，帮助与版本不要求配置凭据或创建 Session。 */

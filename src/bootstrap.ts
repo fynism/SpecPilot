@@ -67,8 +67,9 @@ export function buildSessionRuntime(
   let ready = false;
   const plan =
     clarificationMode === 'rounds'
-      ? manager.clarificationService(() => {
+      ? manager.clarificationService((hasQuestions) => {
           ready = true;
+          manager.specTools.finishClarificationRound(hasQuestions);
         })
       : undefined;
   const registry = buildDefaultRegistry(root, manager.specTools, presenter, hooks.trigger, plan);

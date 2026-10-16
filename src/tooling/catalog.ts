@@ -61,7 +61,7 @@ export function buildDefaultRegistry(
     );
     registry.register(
       'publish_clarification_round',
-      '按预期版本更新完整总览并发布最多五个本轮问题，默认三个；保留所有旧 ID。此工具不会等待用户，成功后立即结束本轮，必须最后调用。解决问题必须关联真实证据；不得把推荐当作回答。',
+      '按预期版本更新完整总览并发布一至三个本轮关键问题；按依赖和优先级自适应，不填充问题。保留所有旧 ID。此工具不会等待用户，成功后立即结束本轮，必须最后调用。解决问题必须关联真实证据；不得把推荐当作回答。',
       publishRoundSchema,
       (i) => {
         try {

@@ -23,7 +23,6 @@ const round = () => ({
     statement: id === 'users' ? '谁可以导出？' : '需要哪些文件？',
     blocking: true,
     depends_on: [],
-    open_question_id: null,
     spec_entity_ids: [],
     status: 'pending' as const,
     change_reason: '先确认基本场景',

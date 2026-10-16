@@ -201,12 +201,10 @@ export function ClarificationBoard({
   const facts =
     question?.status === 'resolved'
       ? [
-          ...spec.goals,
-          ...spec.scope,
+          ...(spec.goal ? [spec.goal] : []),
+          ...spec.boundaries,
           ...spec.decisions,
           ...spec.requirements,
-          ...spec.assumptions,
-          ...spec.acceptance_criteria,
         ]
           .filter((e) => e.lifecycle === 'active' && question.spec_entity_ids.includes(e.id))
           .map((e) => e.statement)
@@ -283,7 +281,7 @@ export function ClarificationBoard({
         <Text dimColor wrap="truncate-end">
           {question.blocking ? t('board.blocking') : ''}
           {t('board.dependencies')}: {question.depends_on.join(', ') || '-'} ·{' '}
-          {question.open_question_id ?? '-'}
+          {question.spec_entity_ids.join(', ') || '-'}
         </Text>
       ) : null}
       {question && latestAnswer(plan, question.id) ? (
