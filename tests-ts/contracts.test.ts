@@ -64,14 +64,22 @@ describe('严格契约与兼容配置', () => {
     try {
       writeFileSync(join(root, '.env'), 'MODEL_ID=file-model\nMAX_TOOL_USE_TURNS=3\n');
       expect(
-        loadSettings(root, { ANTHROPIC_API_KEY: 'test-secret', MODEL_ID: 'env-model' }).model,
+        loadSettings(
+          root,
+          { ANTHROPIC_API_KEY: 'test-secret', MODEL_ID: 'env-model' },
+          join(root, 'user.json'),
+        ).model,
       ).toBe('file-model');
       writeFileSync(join(root, '.env'), 'MAX_TOOL_USE_TURNS=2.5\n');
-      expect(() => loadSettings(root, {})).toThrow('必须是整数');
+      expect(() => loadSettings(root, {}, join(root, 'user.json'))).toThrow('必须是整数');
       writeFileSync(join(root, '.env'), 'MAX_TOOL_USE_TURNS=0\n');
-      expect(() => loadSettings(root, { ANTHROPIC_API_KEY: 'test-secret' })).toThrow();
+      expect(() =>
+        loadSettings(root, { ANTHROPIC_API_KEY: 'test-secret' }, join(root, 'user.json')),
+      ).toThrow();
       rmSync(join(root, '.env'));
-      expect(() => loadSettings(root, {})).toThrow('缺少 ANTHROPIC_API_KEY');
+      expect(() => loadSettings(root, {}, join(root, 'user.json'))).toThrow(
+        '缺少 ANTHROPIC_API_KEY',
+      );
     } finally {
       rmSync(root, { recursive: true });
     }
