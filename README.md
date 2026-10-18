@@ -13,7 +13,29 @@ npm ci
 npm run build
 ```
 
-在目标工作区创建 `.env`（可复制本仓库的 `.env.example`）：
+安装 CLI 后，在目标工作区运行 `specpilot`。交互终端中缺少配置时会自动进入配置向导；
+也可以随时通过 `specpilot config` 修改用户配置。源码运行使用 `npm run dev -- config`。
+
+配置按以下顺序输入：
+
+1. API 协议：Anthropic 或 OpenAI 兼容协议，仅配置第三方 API。
+2. Base URL：服务商提供的 HTTPS API Base URL，保留合法路径前缀（例如 `/proxy/v1`）；
+   不能包含账号、查询参数或片段，不填写完整的消息接口地址。
+3. 模型 ID：手动输入服务商提供的模型标识。
+4. API Key：输入内容遮蔽，支持粘贴。编辑时留空保留已有 Key；协议或 URL 改变后必须重新输入。
+
+配置默认保存到当前用户的 `~/.specpilot/config.json`（Windows 中 `~` 对应用户目录），
+跨工作区复用，不修改项目 `.env`。**API Key 以明文存储**，文件限制为当前用户访问；
+Unix 使用目录 `0700`、文件 `0600`，Windows 使用当前用户 SID 的文件 ACL。
+不自动发送连接验证请求，保存成功不代表第三方服务兼容。
+
+`specpilot config` 保存后退出；首次启动完成 Anthropic 配置后继续进入应用。
+OpenAI 目前只支持填写和保存，运行时会明确拒绝，不回落到 Anthropic。
+Esc / Ctrl+C 取消不保存；保存失败保留旧配置。配置文件损坏、读取失败或版本不兼容时明确报错，
+请修复配置文件后重试，不会自动重置。
+
+管道和 CI 不启动配置向导；缺少配置或执行 `specpilot config` 时以非零退出码退出。
+可以提前完成用户配置，或通过以下旧 `.env` / 进程环境变量方式提供配置：
 
 ```dotenv
 ANTHROPIC_API_KEY=你的_API_Key
@@ -22,9 +44,17 @@ ANTHROPIC_BASE_URL=
 MAX_TOOL_USE_TURNS=20
 ```
 
-保留原环境变量名称、默认工具轮次 `20` 和 `.env` 优先于同名进程变量的行为。
-`MAX_TOOL_USE_TURNS` 必须是正整数；`ANTHROPIC_BASE_URL` 可选。不要提交真实密钥。
-配置在启动时读取，导入模块、查看帮助或版本不需要 API Key。
+兼容读取规则：
+
+- 先合并进程环境与工作区 `.env`，`.env` 中的同名变量优先。
+- 只要存在 `ANTHROPIC_API_KEY` 或 `ANTHROPIC_BASE_URL`（包括空值），就整组使用旧 Anthropic
+  连接配置，不从用户文件补齐 Key 或 URL。旧模式下 `ANTHROPIC_BASE_URL` 仍可省略。
+- 没有旧连接字段时使用用户配置；`MODEL_ID` 可独立覆盖用户配置中的模型 ID。
+- `MAX_TOOL_USE_TURNS` 必须是正整数，默认 `20`。
+
+保存配置时显示文件位置和实际生效来源。旧连接配置覆盖用户配置时会提示；
+如需使用用户配置，请移除旧连接字段，不能仅将其留空。
+不要提交 `.env` 或真实密钥。配置在启动时读取，导入模块、查看帮助或版本不需要 API Key。
 
 ```powershell
 # 在本仓库启动
@@ -39,6 +69,7 @@ npm install --global .\specpilot-0.1.0.tgz
 
 # 安装后在目标仓库中启动
 specpilot
+specpilot config
 specpilot --help
 specpilot --version
 ```

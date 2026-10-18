@@ -22,9 +22,17 @@ import { SessionManager } from './runtime/session/manager.js';
 
 const help = `SpecPilot · 需求澄清 Agent
 
-用法：specpilot [--help | --version]
-在目标仓库启动，从工作区 .env 读取 ANTHROPIC_API_KEY、MODEL_ID、
-ANTHROPIC_BASE_URL 和 MAX_TOOL_USE_TURNS。
+用法：specpilot [config | --help | --version]
+config                配置第三方 API，保存后退出
+首次交互启动缺少配置时自动引导：协议 → Base URL → 模型 ID → API Key。
+用户配置保存在 ~/.specpilot/config.json，Key 以明文保存并限制文件访问。
+Anthropic 可运行；OpenAI 仅支持保存，暂不支持运行。不自动发送连接验证请求。
+Esc / Ctrl+C 取消不保存；非交互环境缺少配置或执行 config 时直接报错。
+
+兼容读取工作区 .env / 进程环境中的 ANTHROPIC_API_KEY、MODEL_ID、
+ANTHROPIC_BASE_URL 和 MAX_TOOL_USE_TURNS；.env 优于同名进程变量。
+存在旧 Key 或 URL 字段时整组使用旧连接，否则读取用户配置。
+MODEL_ID 可独立覆盖用户模型；MAX_TOOL_USE_TURNS 默认为 20。
 
 /new [标题]           创建并切换 Session
 /sessions             列出本 worktree 的 Session
@@ -42,7 +50,7 @@ ANTHROPIC_BASE_URL 和 MAX_TOOL_USE_TURNS。
 状态保存在 .specpilot/sessions-v5/；导出在 .specpilot/specs/。
 `;
 
-/** npm 可执行入口，帮助与版本不要求配置凭据或创建 Session。 */
+/** npm 可执行入口，配置命令、帮助与版本均不创建 Session。 */
 export async function main(args = process.argv.slice(2)): Promise<void> {
   if (args.length === 1 && ['--help', '-h'].includes(args[0] ?? '')) {
     process.stdout.write(help);
