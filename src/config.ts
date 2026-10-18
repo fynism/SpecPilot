@@ -235,3 +235,9 @@ export function loadSettings(
 ): z.output<typeof settingsSchema> {
   return resolveSettings(inspectConfiguration(workspace, environment, path));
 }
+
+/** 配置保存与运行能力分离，未接入的协议不得回落到其他供应商。 */
+export function assertRunnableSettings(settings: Settings): void {
+  if (settings.protocol === 'openai')
+    throw new ConfigurationError('OpenAI 配置已保存，当前版本尚不支持运行此协议。');
+}

@@ -3,7 +3,13 @@ import { realpathSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { render } from 'ink';
 import { buildContextUsageReader, buildSessionRuntime } from './bootstrap.js';
-import { ConfigurationError, inspectConfiguration, loadSettings } from './config.js';
+import {
+  assertRunnableSettings,
+  ConfigurationError,
+  inspectConfiguration,
+  MissingConfigurationError,
+  resolveSettings,
+} from './config.js';
 import { LocalSessionStore } from './integrations/filesystem/session-store.js';
 import { type RuntimeFactory, TerminalApp } from './integrations/terminal/app.js';
 import {
@@ -54,10 +60,11 @@ export async function main(args = process.argv.slice(2)): Promise<void> {
   }
   try {
     const root = realpathSync(process.cwd());
+    const interactive = !!(process.stdin.isTTY && process.stdout.isTTY);
+    if (configure && !interactive)
+      throw new ConfigurationError('specpilot config 需要交互终端，请在终端中运行。');
+    let configuration = inspectConfiguration(root);
     if (configure) {
-      if (!process.stdin.isTTY || !process.stdout.isTTY)
-        throw new ConfigurationError('specpilot config 需要交互终端，请在终端中运行。');
-      const configuration = inspectConfiguration(root);
       const saved = await runConfigurationWizard(configuration);
       if (!saved) {
         process.stdout.write('已取消配置，原配置未修改。\n');
@@ -69,7 +76,30 @@ export async function main(args = process.argv.slice(2)): Promise<void> {
         process.stdout.write('OpenAI 配置已保存，当前版本尚不支持运行此协议。\n');
       return;
     }
-    const settings = loadSettings(root);
+    let settings: ReturnType<typeof resolveSettings>;
+    let reportedSource = false;
+    try {
+      settings = resolveSettings(configuration);
+    } catch (error) {
+      if (!(error instanceof MissingConfigurationError)) throw error;
+      if (!interactive)
+        throw new ConfigurationError(
+          '配置缺失，请在交互终端运行 specpilot config，或通过 .env / 环境变量提供完整配置。',
+        );
+      process.stdout.write('尚未完成 API 配置，进入配置向导。\n');
+      const saved = await runConfigurationWizard(configuration);
+      if (!saved) {
+        process.stdout.write('已取消配置，原配置未修改。\n');
+        return;
+      }
+      process.stdout.write(`配置已保存：${safeTerminalText(configuration.path)}\n`);
+      configuration = inspectConfiguration(root);
+      process.stdout.write(`${configurationSourceText(configuration)}\n`);
+      reportedSource = true;
+      settings = resolveSettings(configuration);
+    }
+    assertRunnableSettings(settings);
+    if (!reportedSource) process.stdout.write(`${configurationSourceText(configuration)}\n`);
     const manager = new SessionManager(new LocalSessionStore(root));
     manager.start();
     const runtimeFactory: RuntimeFactory = (presenter, emit) =>

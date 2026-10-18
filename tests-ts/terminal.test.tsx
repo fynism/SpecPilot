@@ -638,7 +638,13 @@ describe('非 TTY 与 npm CLI 入口', () => {
             cwd: fixture.root,
             input,
             encoding: 'utf8',
-            env: { ...process.env, ANTHROPIC_API_KEY: 'offline', MODEL_ID: 'fake' },
+            env: {
+              ...process.env,
+              HOME: fixture.root,
+              USERPROFILE: fixture.root,
+              ANTHROPIC_API_KEY: 'offline',
+              MODEL_ID: 'fake',
+            },
           },
         );
       const help = invoke(['--help']);

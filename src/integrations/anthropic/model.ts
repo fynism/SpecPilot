@@ -1,7 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk';
 import type { MessageParam, Tool } from '@anthropic-ai/sdk/resources/messages';
 import { z } from 'zod';
-import type { Settings } from '../../config.js';
+import { assertRunnableSettings, type Settings } from '../../config.js';
 import {
   ContextLimitError,
   type Message,
@@ -48,6 +48,7 @@ export class AnthropicModelClient implements ModelClient {
     client?: Anthropic,
     private readonly onUsage?: (usage: { input_tokens: number; output_tokens: number }) => void,
   ) {
+    assertRunnableSettings(settings);
     this.client =
       client ??
       new Anthropic({

@@ -74,6 +74,7 @@ try {
     npm(['exec', '--prefix', installation, '--offline', '--', 'specpilot', ...args], {
       cwd: installation,
       input,
+      env: { ...process.env, HOME: join(root, 'home'), USERPROFILE: join(root, 'home') },
     });
   const help = invoke(['--help']);
   assert(help.includes('/done'));
