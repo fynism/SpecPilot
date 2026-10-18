@@ -3,10 +3,15 @@ import { realpathSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { render } from 'ink';
 import { buildContextUsageReader, buildSessionRuntime } from './bootstrap.js';
-import { loadSettings } from './config.js';
+import { ConfigurationError, inspectConfiguration, loadSettings } from './config.js';
 import { LocalSessionStore } from './integrations/filesystem/session-store.js';
 import { type RuntimeFactory, TerminalApp } from './integrations/terminal/app.js';
+import {
+  configurationSourceText,
+  runConfigurationWizard,
+} from './integrations/terminal/configuration.js';
 import { runConsole } from './integrations/terminal/console.js';
+import { safeTerminalText } from './integrations/terminal/text.js';
 import { SessionManager } from './runtime/session/manager.js';
 
 const help = `SpecPilot · 需求澄清 Agent
@@ -41,13 +46,29 @@ export async function main(args = process.argv.slice(2)): Promise<void> {
     process.stdout.write('0.1.0\n');
     return;
   }
-  if (args.length) {
+  const configure = args.length === 1 && args[0] === 'config';
+  if (args.length && !configure) {
     process.stderr.write('参数无效，请运行 specpilot --help。\n');
     process.exitCode = 1;
     return;
   }
   try {
     const root = realpathSync(process.cwd());
+    if (configure) {
+      if (!process.stdin.isTTY || !process.stdout.isTTY)
+        throw new ConfigurationError('specpilot config 需要交互终端，请在终端中运行。');
+      const configuration = inspectConfiguration(root);
+      const saved = await runConfigurationWizard(configuration);
+      if (!saved) {
+        process.stdout.write('已取消配置，原配置未修改。\n');
+        return;
+      }
+      process.stdout.write(`配置已保存：${safeTerminalText(configuration.path)}\n`);
+      process.stdout.write(`${configurationSourceText(inspectConfiguration(root))}\n`);
+      if (saved.protocol === 'openai')
+        process.stdout.write('OpenAI 配置已保存，当前版本尚不支持运行此协议。\n');
+      return;
+    }
     const settings = loadSettings(root);
     const manager = new SessionManager(new LocalSessionStore(root));
     manager.start();
@@ -69,8 +90,7 @@ export async function main(args = process.argv.slice(2)): Promise<void> {
   } catch (error) {
     // 配置错误已在读取边界脱敏，其余外部异常只显示类型，避免供应商请求数据泄漏。
     const message =
-      error instanceof Error &&
-      /^(配置无效|缺少|MAX_TOOL_USE_TURNS|无法读取工作区)/.test(error.message)
+      error instanceof ConfigurationError
         ? error.message
         : error instanceof Error
           ? error.name
