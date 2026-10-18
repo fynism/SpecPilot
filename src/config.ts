@@ -89,9 +89,9 @@ function rejectSymlink(path: string): void {
   }
 }
 
-function restrictDirectory(path: string): void {
+function restrictAccess(path: string, directory: boolean): void {
   if (process.platform !== 'win32') {
-    fs.chmodSync(path, 0o700);
+    fs.chmodSync(path, directory ? 0o700 : 0o600);
     return;
   }
   // Windows 的 mode 不隔离用户；禁用继承并显式授予当前登录 SID 访问权限。
@@ -102,10 +102,14 @@ function restrictDirectory(path: string): void {
   });
   const sid = identity.match(/S-1-\d+(?:-\d+)+/)?.[0];
   if (!sid) throw new ConfigurationError('无法确认当前用户的配置访问权限');
-  execFileSync('icacls.exe', [path, '/inheritance:r', '/grant:r', `*${sid}:(OI)(CI)F`], {
-    stdio: 'pipe',
-    windowsHide: true,
-  });
+  execFileSync(
+    'icacls.exe',
+    [path, '/inheritance:r', '/grant:r', `*${sid}:${directory ? '(OI)(CI)' : ''}F`],
+    {
+      stdio: 'pipe',
+      windowsHide: true,
+    },
+  );
 }
 
 /** 校验后原子保存；临时文件权限与正式配置一致，失败保留旧文件。 */
@@ -119,10 +123,12 @@ export function writeUserConfig(input: UserConfig, path = userConfigPath()): voi
     rejectSymlink(directory);
     rejectSymlink(path);
     fs.mkdirSync(directory, { recursive: true, mode: 0o700 });
-    restrictDirectory(directory);
+    restrictAccess(directory, true);
     const descriptor = fs.openSync(temporary, 'wx', 0o600);
     created = true;
     try {
+      // 已有目录可能保留显式宽权限，必须在写入密钥前独立收紧新文件的 ACL。
+      restrictAccess(temporary, false);
       fs.writeFileSync(descriptor, `${JSON.stringify(result.data, null, 2)}\n`, 'utf8');
       fs.fsyncSync(descriptor);
     } finally {

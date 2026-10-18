@@ -69,6 +69,22 @@ describe('用户配置持久化', () => {
     expect(fs.readdirSync(dirname(path))).toEqual(['config.json']);
   });
 
+  it.skipIf(process.platform !== 'win32')(
+    '已有目录含宽泛显式 ACL 时，凭据文件仍只授权当前用户',
+    () => {
+      const { root, path } = fixture();
+      fs.mkdirSync(dirname(path));
+      execFileSync('icacls.exe', [dirname(path), '/grant', '*S-1-1-0:(OI)(CI)R'], {
+        stdio: 'pipe',
+        windowsHide: true,
+      });
+      writeUserConfig(config, path);
+      const aclFile = join(root, 'acl.txt');
+      execFileSync('icacls.exe', [path, '/save', aclFile], { stdio: 'pipe', windowsHide: true });
+      expect(fs.readFileSync(aclFile, 'utf16le')).not.toContain(';;;WD');
+    },
+  );
+
   it.each([
     '{test-private-key',
     JSON.stringify({ ...config, schema_version: 2 }),
