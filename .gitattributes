@@ -1,0 +1,6 @@
+# 统一文本文件的检出换行，与 Biome 保持一致，覆盖 core.autocrlf。
+* text=auto eol=lf
+
+# Windows 批处理文件保留原生换行。
+*.bat text eol=crlf
+*.cmd text eol=crlf

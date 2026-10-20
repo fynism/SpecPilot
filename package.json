@@ -1,5 +1,5 @@
 {
-  "name": "specpilot",
+  "name": "@fyismus/specpilot",
   "version": "0.1.0",
   "license": "UNLICENSED",
   "description": "面向软件项目的需求澄清与结构化 Specification CLI",
