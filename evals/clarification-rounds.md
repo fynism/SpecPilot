@@ -20,7 +20,7 @@ Token 使用量来自 SDK 标准输入／输出计数，不估算缓存计费。
 
 ```powershell
 $env:SPECPILOT_RUN_LIVE_EVALS = '1'
-npx vitest run tests-ts/clarification-evals.test.ts -t '真实模型'
+npx vitest run tests/clarification-evals.test.ts -t '真实模型'
 Remove-Item Env:SPECPILOT_RUN_LIVE_EVALS
 ```
 

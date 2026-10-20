@@ -1,6 +1,6 @@
 # 显式需求入口评测
 
-`tests-ts/clarify-entry.test.ts` 使用受控模型经过真实组合根、入口、Executor 和 Session，验证：
+`tests/clarify-entry.test.ts` 使用受控模型经过真实组合根、入口、Executor 和 Session，验证：
 
 - 普通聊天可调查仓库；异常写入、轮次发布和导出调用被拒绝。
 - 已有 pending 提交时，聊天成功、失败或进程退出均不消费答案、不修改 Spec。
@@ -12,7 +12,7 @@
 
 ```powershell
 $env:SPECPILOT_RUN_ENTRY_EVALS = '1'
-npx vitest run tests-ts/clarify-entry-live.test.ts
+npx vitest run tests/clarify-entry-live.test.ts
 Remove-Item Env:SPECPILOT_RUN_ENTRY_EVALS
 ```
 

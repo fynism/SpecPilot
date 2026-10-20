@@ -20,8 +20,8 @@
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc --noEmit",
-    "lint": "biome check src tests-ts scripts package.json biome.json tsconfig.json tsconfig.build.json vitest.config.ts",
-    "format": "biome check --write src tests-ts scripts package.json biome.json tsconfig.json tsconfig.build.json vitest.config.ts",
+    "lint": "biome check src tests scripts package.json biome.json tsconfig.json tsconfig.build.json vitest.config.ts",
+    "format": "biome check --write src tests scripts package.json biome.json tsconfig.json tsconfig.build.json vitest.config.ts",
     "tests": "vitest run",
     "test": "npm run tests",
     "start": "node dist/cli.js",
