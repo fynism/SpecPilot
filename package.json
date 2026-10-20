@@ -1,6 +1,6 @@
 {
   "name": "@fyismus/specpilot",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "license": "UNLICENSED",
   "description": "面向软件项目的需求澄清与结构化 Specification CLI",
   "type": "module",
@@ -11,6 +11,7 @@
     "dist/**/*.js",
     "!dist/evaluation/**",
     "README.md",
+    "README_zh.md",
     ".env.example"
   ],
   "engines": {

@@ -57,7 +57,7 @@ export async function main(args = process.argv.slice(2)): Promise<void> {
     return;
   }
   if (args.length === 1 && ['--version', '-v'].includes(args[0] ?? '')) {
-    process.stdout.write('0.1.0\n');
+    process.stdout.write('0.1.1\n');
     return;
   }
   const configure = args.length === 1 && args[0] === 'config';

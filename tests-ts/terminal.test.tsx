@@ -654,7 +654,7 @@ describe('非 TTY 与 npm CLI 入口', () => {
       const help = invoke(['--help']);
       expect(help).toContain('/done');
       expect(help).toContain('/compact');
-      expect(invoke(['--version'])).toBe('0.1.0\n');
+      expect(invoke(['--version'])).toBe('0.1.1\n');
       const output = invoke([], '/new CLI会话\n/rename CLI标题\n/status\n/quit\n');
       expect(output).toContain('CLI标题');
       expect(output).not.toContain('\u001b');

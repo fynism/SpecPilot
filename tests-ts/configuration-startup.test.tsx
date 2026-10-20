@@ -252,7 +252,7 @@ describe('CLI 配置与首次启动', () => {
     await main(['--help']);
     expect(output).toContain('SpecPilot');
     await main(['--version']);
-    expect(output).toContain('0.1.0');
+    expect(output).toContain('0.1.1');
     await main(['unknown']);
     expect(errors).toContain('参数无效');
     expect(fs.existsSync(location.home)).toBe(false);

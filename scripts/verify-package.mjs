@@ -28,6 +28,22 @@ try {
   const [manifest] = JSON.parse(npm(['pack', '--dry-run', '--ignore-scripts', '--json']));
   assert(manifest.files.some((file) => file.path === 'dist/cli.js'));
   assert(manifest.files.some((file) => file.path === '.env.example'));
+  // npm 页面不能解析指向未发布仓库文档的相对链接，两种语言的说明必须随包交付。
+  for (const document of ['README.md', 'README_zh.md']) {
+    assert(
+      manifest.files.some((file) => file.path === document),
+      `发布包缺少用户文档：${document}`,
+    );
+    const markdown = readFileSync(join(project, document), 'utf8');
+    for (const [, target] of markdown.matchAll(/\[[^\]]*\]\(([^)]+)\)/g)) {
+      assert(
+        target.startsWith('https://') ||
+          target.startsWith('#') ||
+          manifest.files.some((file) => file.path === target.split('#')[0]),
+        `${document} 中的链接无法从发布包打开：${target}`,
+      );
+    }
+  }
   for (const file of manifest.files) {
     assert(
       !file.path.endsWith('.d.ts') && !file.path.endsWith('.map'),
@@ -90,7 +106,7 @@ try {
   assert(help.includes('/done'));
   assert(help.includes('/compact'));
   assert(help.includes('/clarify [需求描述]'));
-  assert.equal(invoke(['--version']), '0.1.0\n');
+  assert.equal(invoke(['--version']), '0.1.1\n');
   writeFileSync(
     join(installation, '.env'),
     'ANTHROPIC_API_KEY=offline\nMODEL_ID=fake\nMAX_TOOL_USE_TURNS=20\n',
