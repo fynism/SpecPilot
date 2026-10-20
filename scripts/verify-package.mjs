@@ -28,6 +28,16 @@ try {
   const [manifest] = JSON.parse(npm(['pack', '--dry-run', '--ignore-scripts', '--json']));
   assert(manifest.files.some((file) => file.path === 'dist/cli.js'));
   assert(manifest.files.some((file) => file.path === '.env.example'));
+  for (const file of manifest.files) {
+    assert(
+      !file.path.endsWith('.d.ts') && !file.path.endsWith('.map'),
+      `CLI 发布包不应包含类型声明或 source map：${file.path}`,
+    );
+    assert(
+      !/^(?:evals|dist\/evaluation)\//.test(file.path),
+      `CLI 发布包不应包含评测代码或数据：${file.path}`,
+    );
+  }
   assert(
     manifest.files.every(
       (file) =>

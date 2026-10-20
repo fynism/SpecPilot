@@ -193,6 +193,10 @@ npm run smoke:package
 状态、工具、Anthropic 模拟协议、Python JSON 迁移、六个原有场景的受控执行轨迹和 Ink 按键。
 这些脚本化轨迹验证运行时契约，不能替代真实模型的概率性评估。
 
+CLI 发布包只包含运行所需的 JavaScript、README、包配置与 `.env.example`，不包含类型声明、
+source map、测试、评测代码或评测数据。测试与评测仍从仓库源码运行；`smoke:package` 会检查
+发布清单，并在临时目录中安装 tarball、验证 CLI 与 Session 行为。
+
 原付费 Eval 仍通过 `SPECPILOT_RUN_LIVE_EVALS=1` 单独启用，默认跳过。CI 在 Windows 和
 Linux 的 Node 22 上执行所有确定性检查和打包检查。
 
