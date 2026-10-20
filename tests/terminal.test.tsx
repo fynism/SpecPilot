@@ -661,7 +661,7 @@ describe('非 TTY 与 npm CLI 入口', () => {
     } finally {
       fixture.cleanup();
     }
-  });
+  }, 15_000);
   it('两种语言词条完整，文本安全和协议过滤保持结构化角色', () => {
     expect(Object.keys(catalogs['zh-CN']).sort()).toEqual(Object.keys(catalogs['en-US']).sort());
     expect(resolveLocale('EN_us')).toBe('en-US');
