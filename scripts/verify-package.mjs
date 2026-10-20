@@ -79,7 +79,7 @@ try {
       tarball,
       '--prefix',
       installation,
-      '--offline',
+      '--prefer-offline',
       '--omit=dev',
       '--ignore-scripts',
       '--no-audit',
