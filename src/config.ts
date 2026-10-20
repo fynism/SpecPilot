@@ -2,7 +2,7 @@ import { execFileSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import * as fs from 'node:fs';
 import { homedir } from 'node:os';
-import { dirname, join, resolve } from 'node:path';
+import { dirname, isAbsolute, join, resolve } from 'node:path';
 import { parse } from 'dotenv';
 import { z } from 'zod';
 
@@ -96,14 +96,24 @@ function restrictAccess(path: string, directory: boolean): void {
   }
   // Windows 的 mode 不隔离用户；禁用继承并显式授予当前登录 SID 访问权限。
   // 不输出命令结果，身份查询失败时拒绝落盘，不能降级为宽权限保存密钥。
-  const identity = execFileSync('whoami.exe', ['/user', '/fo', 'csv', '/nh'], {
-    encoding: 'utf8',
-    windowsHide: true,
-  });
+  const systemRoot = process.env.SystemRoot;
+  if (!systemRoot || !isAbsolute(systemRoot))
+    throw new ConfigurationError('无法定位 Windows 系统权限工具');
+  // 不通过 PATH 搜索，避免 Git/MSYS 的同名 whoami 或其他程序覆盖系统工具。
+  const systemDirectory = join(systemRoot, 'System32');
+  const identity = execFileSync(
+    join(systemDirectory, 'whoami.exe'),
+    ['/user', '/fo', 'csv', '/nh'],
+    {
+      encoding: 'utf8',
+      stdio: 'pipe',
+      windowsHide: true,
+    },
+  );
   const sid = identity.match(/S-1-\d+(?:-\d+)+/)?.[0];
   if (!sid) throw new ConfigurationError('无法确认当前用户的配置访问权限');
   execFileSync(
-    'icacls.exe',
+    join(systemDirectory, 'icacls.exe'),
     [path, '/inheritance:r', '/grant:r', `*${sid}:${directory ? '(OI)(CI)' : ''}F`],
     {
       stdio: 'pipe',

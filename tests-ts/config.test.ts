@@ -1,7 +1,7 @@
 import { execFileSync } from 'node:child_process';
 import * as fs from 'node:fs';
 import { tmpdir } from 'node:os';
-import { dirname, join } from 'node:path';
+import { delimiter, dirname, join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   baseUrlSchema,
@@ -35,10 +35,33 @@ const config: UserConfig = {
 
 afterEach(() => {
   vi.restoreAllMocks();
+  vi.unstubAllEnvs();
   for (const root of roots.splice(0)) fs.rmSync(root, { recursive: true, force: true });
 });
 
 describe('用户配置持久化', () => {
+  it.skipIf(process.platform !== 'win32').each(['whoami.exe', 'icacls.exe'])(
+    'PATH 中的同名 %s 不影响安全保存配置',
+    (command) => {
+      const { root, path } = fixture();
+      const shadow = join(root, 'shadow-bin');
+      fs.mkdirSync(shadow);
+      const systemRoot = process.env.SystemRoot;
+      if (!systemRoot) throw new Error('Windows 回归测试需要 SystemRoot');
+      const systemDirectory = join(systemRoot, 'System32');
+      // 用不接受身份/ACL 参数的系统程序模拟 PATH 中的同名可执行文件。
+      fs.copyFileSync(join(systemDirectory, 'where.exe'), join(shadow, command));
+      vi.stubEnv('PATH', `${shadow}${delimiter}${process.env.PATH ?? ''}`);
+      writeUserConfig(config, path);
+      expect(readUserConfig(path)).toEqual(config);
+      const acl = execFileSync(join(systemDirectory, 'icacls.exe'), [path], {
+        encoding: 'utf8',
+        windowsHide: true,
+      });
+      expect(acl).not.toMatch(/BUILTIN\\Users|Everyone/);
+    },
+  );
+
   it('缺文件不写目录，保存带版本号的配置并限制访问权限', () => {
     const { root, path } = fixture();
     expect(readUserConfig(path)).toBeUndefined();

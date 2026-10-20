@@ -2,6 +2,7 @@ import { execFileSync } from 'node:child_process';
 import { resolve } from 'node:path';
 import { Readable, Writable } from 'node:stream';
 import { pathToFileURL } from 'node:url';
+import { stripVTControlCharacters } from 'node:util';
 import { cleanup, render } from 'ink-testing-library';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { buildContextUsageReader } from '../src/bootstrap.js';
@@ -28,7 +29,10 @@ afterEach(() => {
 });
 type Screen = ReturnType<typeof render>;
 async function frame(screen: Screen, text: string): Promise<void> {
-  await vi.waitFor(() => expect(screen.lastFrame()).toContain(text));
+  // 断言可见文字，颜色控制序列可能插在提示符与输入之间。
+  await vi.waitFor(() =>
+    expect(stripVTControlCharacters(screen.lastFrame() ?? '')).toContain(text),
+  );
   // Ink 写出帧早于 useInput 的被动 effect；等待下一事件循环再发送按键。
   await new Promise<void>((resolve) => setImmediate(resolve));
 }

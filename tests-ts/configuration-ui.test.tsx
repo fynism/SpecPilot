@@ -1,3 +1,4 @@
+import { stripVTControlCharacters } from 'node:util';
 import { cleanup, render } from 'ink-testing-library';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { type ConfigDraft, ConfigurationError, type UserConfig } from '../src/config.js';
@@ -5,8 +6,13 @@ import { ConfigurationWizard } from '../src/integrations/terminal/configuration.
 
 afterEach(cleanup);
 type Screen = ReturnType<typeof render>;
-async function frame(screen: Screen, text: string) {
-  await vi.waitFor(() => expect(screen.lastFrame()).toContain(text));
+const selectedOpenAI = /OpenAI 兼容协议（暂未支持运行） [√✔]/;
+async function frame(screen: Screen, text: string | RegExp) {
+  await vi.waitFor(() => {
+    const visible = stripVTControlCharacters(screen.lastFrame() ?? '');
+    if (typeof text === 'string') expect(visible).toContain(text);
+    else expect(visible).toMatch(text);
+  });
   await new Promise<void>((resolve) => setImmediate(resolve));
 }
 async function enter(screen: Screen, next: string) {
@@ -67,7 +73,7 @@ describe('四步 API 配置向导', () => {
     const { screen, onSave } = await start(existing);
     if (change === 'protocol') {
       screen.stdin.write('\u001b[B');
-      await frame(screen, 'OpenAI 兼容协议（暂未支持运行） √');
+      await frame(screen, selectedOpenAI);
     }
     await enter(screen, '2/4');
     if (change === 'url') {
@@ -92,7 +98,7 @@ describe('四步 API 配置向导', () => {
 
   it('已保存 OpenAI 可以直接确认协议，并能替换已有 Key', async () => {
     const { screen, onSave } = await start({ ...existing, protocol: 'openai' });
-    expect(screen.lastFrame()).toContain('OpenAI 兼容协议（暂未支持运行） √');
+    expect(stripVTControlCharacters(screen.lastFrame() ?? '')).toMatch(selectedOpenAI);
     await enter(screen, '2/4');
     await enter(screen, '3/4');
     await enter(screen, '4/4');
