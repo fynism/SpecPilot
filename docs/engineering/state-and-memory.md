@@ -38,7 +38,7 @@ Checkpoint 必须足以恢复而不重复危险副作用，包括：
 
 ## 当前本地 Session MVP
 
-当前实现以 worktree 为作用域，在 `.specpilot/sessions/` 中保存多个本地 Session。一个 Session
+当前实现以 worktree 为作用域，在 `.specpilot/sessions-v5/` 中保存多个本地 Session。一个 Session
 快照原子包含消息、当前请求、生命周期状态和完整 Spec 版本历史；索引只记录已知 Session 与
 上次活动项。不同 worktree 不自动共享状态。
 
@@ -46,13 +46,15 @@ Checkpoint 必须足以恢复而不重复危险副作用，包括：
 `waiting_for_user`。启动时遗留的 `running` 转为 `interrupted`，但不会自动执行任何待处理动作。
 这是可恢复对话的最小实现，不满足工具执行中 checkpoint、并发写入、事件审计或长期记忆需求。
 
-### Session v4 与澄清恢复
+### Session v5 与澄清恢复
 
-Session v4 同时保存 `clarification_plan`、`context` 和 `token_usage`。
+Session v5 同时保存精简 Spec v2 历史、`clarification_plan`、`context` 和 `token_usage`。
 澄清总览原子包含主题、问题版本历史、轮次、答案修订、补充草稿与提交状态。
-答案编辑立即写稳定快照，不直接改变 Spec。下一次正常运行为真实提交创建 Evidence；
+答案编辑立即写稳定快照，不直接改变 Spec。下一次显式需求处理运行为真实提交创建 Evidence；普通聊天不消费提交；
 最终总结轮不做该写入。模型变更仍只在完整 Loop 返回后提交；异常或重启发现 running
-时标记 interrupted，待处理提交标记 retry，由用户显式重试。
+时标记 interrupted。捕获到的澄清运行失败将待处理提交标记 retry；普通聊天失败不修改提交。
+进程意外退出后无法从 v5 的 active_request 字符串可靠恢复轮次来源，因此保留提交原状态；
+pending 和 retry 均可由用户显式重试，不自动重放模型或工具。
 
 已提交补充说明也生成宿主证据。宿主证据的命名空间不允许模型创建或覆盖；普通工具只引用
 已有 ID。新澄清提交使原先待批准／已批准的 Spec 进入 revised，再开始模型运行。
@@ -74,25 +76,12 @@ Session v4 同时保存 `clarification_plan`、`context` 和 `token_usage`。
 开始新的本次统计，累计值持续增加。压缩不改变总览及草稿；新版澄清的提示词和工具声明
 必须同样用于压缩前后计数，发布轮次暂停前刷新上下文计数。
 
-### 旧格式迁移与回退
+### 旧格式与回退
 
-所有旧格式先严格校验再迁移到 v4；额外字段、缺失核心字段和混合格式必须拒绝。
-
-| 旧格式 | 保留内容 | 补充内容 |
-| --- | --- | --- |
-| v1 | 消息、请求、状态和 Spec 历史 | 从 Spec 投影总览，空上下文，消耗历史标记未知 |
-| 澄清分支 v2 | 以上及 `clarification_plan` | 空上下文，消耗历史标记未知 |
-| 压缩分支 v2 | 以上及 `context` | 从 Spec 投影总览，消耗历史标记未知 |
-| 压缩分支 v3 | 以上及 `context`、`token_usage` | 从 Spec 投影总览 |
-
-两个历史 v2 按字段结构区分，不把缺失总览误当作空总览覆盖历史。投影已有 OpenQuestion 时，
-未决项保留为待细化，已解决项保留决策引用。空会话没有生成消耗，不标记历史未知。
-首次保存旧格式前备份原始字节到 `session.json.v1.bak`、`.v2.bak` 或 `.v3.bak`，
-不覆盖已有备份；读取迁移幂等，不自动重放模型或工具。
-
-索引与 Spec Schema 仍为 v1。旧程序不能读取 v4；回退前另存完整 v4 文件，再恢复与旧程序
-对应的版本备份。两个 v2 的备份也必须匹配各自分支；恢复备份会回到升级前，之后产生的
-草稿、摘要与用量不会出现在旧程序中，保留的 v4 可用于恢复。
+v5 使用新的 `.specpilot/sessions-v5/` 目录，并严格要求 Session Schema v5 和 Spec Schema v2。
+旧 `.specpilot/sessions/` 文件保持原样，不自动迁移或读取；旧数据仍可由旧版本程序访问。
+如需迁移，必须另行设计并验证显式迁移流程，不能通过推测补造产品决策、需求或验收信息。
+回退旧版本时，其原目录和文件仍在；v5 期间产生的 Session 与 Spec 变化不会出现在旧程序中。
 
 ## 并发与一致性
 
@@ -103,8 +92,8 @@ Session v4 同时保存 `clarification_plan`、`context` 和 `token_usage`。
 
 ## Schema 演进
 
-- 持久化 Schema 必须带版本号，并提供向前迁移测试。
-- 删除字段前先停止写入、迁移旧数据，再在后续版本移除读取兼容。
+- 持久化 Schema 必须带版本号；破坏性变更须使用新目录或经过审查的显式迁移。
+- 不得静默推测丢失字段；新旧格式的测试必须验证数据保留和拒绝行为。
 - Migration 必须可重复运行并在失败后安全重试；执行前备份重要数据。
 
 ## 检查表

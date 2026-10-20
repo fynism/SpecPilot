@@ -38,7 +38,7 @@ describe('多轮澄清领域状态', () => {
     try {
       f.manager.clarification.publish(initialRound());
       const query = required(f.manager.submitClarification('note_one', '仅管理员可以导出'));
-      f.manager.beginTurn(query);
+      f.manager.beginTurn(query, true);
       const spec = f.manager.currentSpec();
       const evidence = required(
         spec.evidence.find((e) => e.locator === 'clarification-note:note_one'),
@@ -104,7 +104,7 @@ describe('多轮澄清领域状态', () => {
       const query = required(manager.submitClarification('save_failure'));
       const boundService = manager.specTools;
       const before = manager.currentSpec();
-      expect(() => manager.beginTurn(query)).toThrow('模拟保存失败');
+      expect(() => manager.beginTurn(query, true)).toThrow('模拟保存失败');
       expect(manager.currentSpec()).toEqual(before);
       expect(JSON.parse(boundService.getSpec())).toEqual(before);
       expect(manager.clarification.get().submissions).toHaveLength(1);
@@ -120,15 +120,11 @@ describe('多轮澄清领域状态', () => {
           typeof f.manager.specTools.applySpecPatch
         >[0],
       );
-      f.manager.specTools.applySpecPatch({
-        expected_version: f.manager.currentSpec().version,
-        change_reason: '准备审阅',
-        operations: [{ op: 'set_spec_metadata', title: null, status: 'ready_for_approval' }],
-      });
+      f.manager.specTools.finishClarificationRound(false);
       f.manager.clarification.publish(initialRound());
       answer(f.manager, 'users', '"'.repeat(1000));
       const query = required(f.manager.submitClarification('changed_answer'));
-      f.manager.beginTurn(query);
+      f.manager.beginTurn(query, true);
       expect(f.manager.currentSpec().status).toBe('revised');
       expect(f.manager.currentSpec().evidence.at(-1)?.summary).toContain('"'.repeat(1000));
       f.manager.completeTurn();
@@ -161,7 +157,7 @@ describe('多轮澄清领域状态', () => {
       answer(f.manager, 'users', '旧草稿');
       answer(f.manager, 'users', '更正后的草稿');
       f.manager.submitClarification('submit_one');
-      f.manager.beginTurn('处理答案');
+      f.manager.beginTurn('处理答案', true);
       f.manager.interruptTurn();
       const retry = JSON.parse(f.manager.retryClarification());
       expect(retry.answers).toHaveLength(1);
@@ -309,7 +305,7 @@ describe('多轮澄清领域状态', () => {
       expect(() => f.manager.clarification.publish(fake)).toThrow('证据');
       answer(f.manager, 'users');
       f.manager.submitClarification('submit_one');
-      f.manager.beginTurn('处理提交');
+      f.manager.beginTurn('处理提交', true);
       ground(f.manager, 'users');
       const patch = currentPatch(f.manager);
       required(patch.questions[0]).status = 'resolved';
@@ -320,19 +316,13 @@ describe('多轮澄清领域状态', () => {
       answer(f.manager, 'users', '所有用户都可以');
       expect(f.manager.clarification.get().questions[0]?.status).toBe('review_needed');
       expect(f.manager.clarification.get().review_entity_ids).toContain('D-001');
-      expect(() =>
-        f.manager.specTools.applySpecPatch({
-          expected_version: f.manager.currentSpec().version,
-          change_reason: '不能提前批准',
-          operations: [{ op: 'set_spec_metadata', title: null, status: 'ready_for_approval' }],
-        }),
-      ).toThrow('澄清');
+      expect(JSON.parse(f.manager.specTools.validateSpec()).ready_for_approval).toBe(false);
       expect(f.manager.clarification.get().answers).toHaveLength(2);
     } finally {
       f.cleanup();
     }
   });
-  it('迁移 v1 备份只写一次，历史保持不变，新 Session 总览互相隔离', () => {
+  it('旧目录不自动迁移，新 Session 总览互相隔离', () => {
     const f = temporaryManager();
     try {
       const old = JSON.parse(
@@ -344,12 +334,8 @@ describe('多轮澄清领域状态', () => {
       const bytes = JSON.stringify(old);
       writeFileSync(path, bytes);
       const store = new LocalSessionStore(f.root);
-      const migrated = store.load(old.session_id);
-      expect(migrated.schema_version).toBe(4);
-      expect(migrated.messages).toEqual(old.messages);
-      store.save(migrated);
-      store.save(migrated);
-      expect(readFileSync(`${path}.v1.bak`, 'utf8')).toBe(bytes);
+      expect(() => store.load(old.session_id)).toThrow('Session 不存在');
+      expect(readFileSync(path, 'utf8')).toBe(bytes);
       f.manager.clarification.publish(initialRound());
       const original = f.manager.current.session_id;
       f.manager.create('独立会话');

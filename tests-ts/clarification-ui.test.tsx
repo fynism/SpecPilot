@@ -3,10 +3,18 @@ import { cleanup, render } from 'ink-testing-library';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { buildSessionRuntime } from '../src/bootstrap.js';
 import { questionRequest } from '../src/capabilities/clarification/plan.js';
+import { patchSchema } from '../src/capabilities/spec/operations.js';
 import { TerminalApp } from '../src/integrations/terminal/app.js';
 import { runConsole } from '../src/integrations/terminal/console.js';
 import type { ModelBlock } from '../src/runtime/model.js';
-import { call, clarification, required, ScriptedClient, temporaryManager } from './helpers.js';
+import {
+  call,
+  clarification,
+  readyIntake,
+  required,
+  ScriptedClient,
+  temporaryManager,
+} from './helpers.js';
 
 afterEach(cleanup);
 const settings = { api_key: 'offline', model: 'fake', max_tool_use_turns: 20 };
@@ -23,7 +31,6 @@ const round = () => ({
     statement: id === 'users' ? '谁可以导出？' : '需要哪些文件？',
     blocking: true,
     depends_on: [],
-    open_question_id: null,
     spec_entity_ids: [],
     status: 'pending' as const,
     change_reason: '先确认基本场景',
@@ -32,8 +39,11 @@ const round = () => ({
   summary: '先确认基本场景，存储待细化',
 });
 type Screen = ReturnType<typeof render>;
-const frame = async (screen: Screen, text: string) =>
-  vi.waitFor(() => expect(screen.lastFrame()).toContain(text));
+const frame = async (screen: Screen, text: string) => {
+  await vi.waitFor(() => expect(screen.lastFrame()).toContain(text));
+  // 帧输出早于 useInput 的被动 effect，等处理器装配后再发送按键。
+  await new Promise<void>((resolve) => setImmediate(resolve));
+};
 const type = async (screen: Screen, text: string) => {
   screen.stdin.write(text);
   await frame(screen, text);
@@ -44,10 +54,109 @@ const command = async (screen: Screen, text: string) => {
 };
 
 describe('多轮清单实际按键', () => {
+  it('无参 /clarify 在空会话只显示用法，不启动模型或打开空面板', async () => {
+    const f = temporaryManager();
+    try {
+      const runtimeFactory = vi.fn(() => {
+        throw new Error('不得调用模型');
+      });
+      const screen = render(<TerminalApp manager={f.manager} runtimeFactory={runtimeFactory} />);
+      await frame(screen, '等待输入');
+      await command(screen, '/clarify');
+      await frame(screen, '请使用 /clarify <需求描述>');
+      expect(runtimeFactory).not.toHaveBeenCalled();
+      expect(screen.lastFrame()).not.toContain('澄清总览');
+      screen.unmount();
+      let output = '';
+      await runConsole(
+        f.manager,
+        runtimeFactory,
+        Readable.from(['/clarify\n/quit\n']),
+        new Writable({
+          write(chunk, _encoding, done) {
+            output += String(chunk);
+            done();
+          },
+        }),
+      );
+      expect(output).toContain('请使用 /clarify <需求描述>');
+      expect(runtimeFactory).not.toHaveBeenCalled();
+    } finally {
+      f.cleanup();
+    }
+  });
+
+  it('空轮次通过宿主校验后关闭面板，显示审阅摘要；Console 同样返回对话', async () => {
+    for (const consoleMode of [false, true]) {
+      const f = temporaryManager();
+      try {
+        f.manager.specTools.applySpecPatch(
+          patchSchema.parse({
+            expected_version: 1,
+            change_reason: '已有明确需求',
+            operations: [
+              { op: 'put_goal', id: 'G-001', statement: '导出订单' },
+              {
+                op: 'put_requirement',
+                id: 'R-001',
+                statement: '导出筛选记录',
+                acceptance_examples: ['两条记录导出两条'],
+              },
+            ],
+          }),
+        );
+        const client = new ScriptedClient([
+          readyIntake,
+          [
+            call('empty', 'publish_clarification_round', {
+              expected_version: 0,
+              topics: [],
+              questions: [],
+              question_ids: [],
+              summary: '订单导出已梳理',
+            }),
+          ],
+        ]);
+        const runtimeFactory = (
+          presenter: Parameters<typeof buildSessionRuntime>[3],
+          emit: (text: string) => void,
+        ) => buildSessionRuntime(f.manager, f.root, settings, presenter, emit, client);
+        if (consoleMode) {
+          let output = '';
+          await runConsole(
+            f.manager,
+            runtimeFactory,
+            Readable.from(['/clarify 导出订单\n/quit\n']),
+            new Writable({
+              write(chunk, _encoding, done) {
+                output += String(chunk);
+                done();
+              },
+            }),
+          );
+          expect(output).toContain('需求已具备审阅条件');
+          expect(output).not.toContain('编号编辑');
+        } else {
+          const screen = render(
+            <TerminalApp manager={f.manager} runtimeFactory={runtimeFactory} />,
+          );
+          await frame(screen, '等待输入');
+          await command(screen, '/clarify 导出订单');
+          await frame(screen, '需求已具备审阅条件');
+          expect(screen.lastFrame()).not.toContain('c 继续');
+          screen.unmount();
+        }
+        expect(f.manager.currentSpec().status).toBe('ready_for_approval');
+      } finally {
+        f.cleanup();
+      }
+    }
+  });
   it('默认组合根发布后显示总览，任意顺序草稿零模型调用，暂缓、历史、部分提交', async () => {
     const f = temporaryManager();
     try {
       const client = new ScriptedClient([
+        readyIntake,
         [call('plan', 'publish_clarification_round', round())],
         [{ type: 'text', text: '待进一步细化' }],
       ]);
@@ -60,9 +169,9 @@ describe('多轮清单实际按键', () => {
         />,
       );
       await frame(screen, '等待输入');
-      await command(screen, '上传功能');
+      await command(screen, '/clarify 上传功能');
       await frame(screen, '澄清总览');
-      expect(client.exposedTools).toHaveLength(1);
+      expect(client.exposedTools).toHaveLength(2);
       screen.stdin.write('\u001b[B');
       await frame(screen, '> 需要哪些文件');
       screen.stdin.write('\r');
@@ -77,7 +186,7 @@ describe('多轮清单实际按键', () => {
         selected_option_id: 'recommended',
         free_text: '只要 CSV',
       });
-      expect(client.exposedTools).toHaveLength(1);
+      expect(client.exposedTools).toHaveLength(2);
       screen.stdin.write('h');
       await frame(screen, '答案修订历史');
       await frame(screen, '管理员');
@@ -88,7 +197,7 @@ describe('多轮清单实际按键', () => {
       screen.stdin.write('d');
       await frame(screen, '暂缓');
       screen.stdin.write('c');
-      await vi.waitFor(() => expect(client.exposedTools).toHaveLength(2));
+      await vi.waitFor(() => expect(client.exposedTools).toHaveLength(3));
       expect(f.manager.clarification.get().answers[0]?.submission_id).not.toBeNull();
       screen.unmount();
     } finally {
@@ -239,6 +348,7 @@ it('Console 与 TUI 等价：主题总览、组合草稿、暂缓、部分提交
       },
     });
     const client = new ScriptedClient([
+      readyIntake,
       [call('plan', 'publish_clarification_round', round())],
       [{ type: 'text', text: '下一轮可以继续' }],
       [{ type: 'text', text: '最终总结' }],
@@ -247,7 +357,7 @@ it('Console 与 TUI 等价：主题总览、组合草稿、暂缓、部分提交
       f.manager,
       (presenter, emit) =>
         buildSessionRuntime(f.manager, f.root, settings, presenter, emit, client),
-      Readable.from(['上传\na\nh 1\nd 1\n2\n只要 CSV\nc\nx\nq\n']),
+      Readable.from(['/clarify 上传\na\nh 1\nd 1\n2\n只要 CSV\nc\nx\nq\n']),
       stdout,
     );
     expect(output).toContain('存储规则');
@@ -255,8 +365,8 @@ it('Console 与 TUI 等价：主题总览、组合草稿、暂缓、部分提交
     expect(output).toContain('暂缓');
     expect(output).toContain('最终总结');
     expect(output).not.toContain('\u001b');
-    expect(client.exposedTools).toHaveLength(3);
-    expect(client.exposedTools[2]).toEqual([]);
+    expect(client.exposedTools).toHaveLength(4);
+    expect(client.exposedTools[3]).toEqual([]);
     expect(f.manager.clarification.get().answers[0]?.question_id).toBe('files');
     expect(f.manager.clarification.get().questions[0]?.status).toBe('deferred');
   } finally {

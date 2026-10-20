@@ -17,6 +17,7 @@ import type { SessionStore } from './store.js';
 export class SessionManager {
   private record?: SessionRecord;
   private specStore?: InMemorySpecStore;
+  private clarificationTurn = false;
   private readonly measurements = new Map<string, ContextMeasurement>();
   constructor(
     private readonly store: SessionStore,
@@ -78,7 +79,7 @@ export class SessionManager {
   get clarification(): ClarificationPlanService {
     return this.clarificationService();
   }
-  clarificationService(published?: () => void): ClarificationPlanService {
+  clarificationService(published?: (hasQuestions: boolean) => void): ClarificationPlanService {
     return new ClarificationPlanService(
       this.require().record.session_id,
       () => this.require().record.clarification_plan,
@@ -129,8 +130,6 @@ export class SessionManager {
   private recover(session: SessionRecord): SessionRecord {
     if (session.status !== 'running') return session;
     const interrupted = { ...session, status: 'interrupted' as const, updated_at: this.clock() };
-    for (const submission of interrupted.clarification_plan.submissions)
-      if (submission.status === 'pending') submission.status = 'retry';
     this.store.save(interrupted);
     return interrupted;
   }
@@ -164,69 +163,89 @@ export class SessionManager {
   listSessions(): SessionRecord[] {
     return this.store.listSessions();
   }
-  beginTurn(request: string): void {
+  /** 只在显式需求入口或宿主提交时消费答案；普通聊天不触碰待处理状态。 */
+  private prepareClarificationEvidence(session: SessionRecord, request: string): void {
+    // 已提交答案的证据由宿主创建，模型只能引用；草稿不进入 Spec。
+    const spec = this.currentSpec();
+    const answers = isClarificationStopRequest(request)
+      ? []
+      : session.clarification_plan.answers.filter(
+          (a) =>
+            a.submission_id && !spec.evidence.some((e) => e.locator === `clarification:${a.id}`),
+        );
+    const pendingSubmission = session.clarification_plan.submissions.some(
+      (s) => s.status === 'pending',
+    );
+    const notes = isClarificationStopRequest(request)
+      ? []
+      : session.clarification_plan.submissions.filter(
+          (s) =>
+            s.note.trim() && !spec.evidence.some((e) => e.locator === `clarification-note:${s.id}`),
+        );
+    if (
+      !isClarificationStopRequest(request) &&
+      (answers.length || pendingSubmission) &&
+      ['ready_for_approval', 'approved'].includes(spec.status)
+    ) {
+      this.specTools.applySpecPatch({
+        expected_version: spec.version,
+        change_reason: '用户提交新的澄清信息，撤回旧的准备状态',
+        operations: [{ op: 'set_spec_metadata', title: null, status: 'revised' }],
+      });
+    }
+    if (answers.length || notes.length) {
+      let next = Math.max(0, ...spec.evidence.map((e) => Number(e.id.slice(2))));
+      const records = [
+        ...answers.map((a) => ({
+          summary: `用户选项：${a.answer.selected_option_id ?? '未选择'}\n用户补充：${a.answer.free_text ?? '无'}`,
+          locator: `clarification:${a.id}`,
+        })),
+        ...notes.map((s) => ({ summary: s.note, locator: `clarification-note:${s.id}` })),
+      ];
+      for (let offset = 0; offset < records.length; offset += 20) {
+        const current = this.currentSpec();
+        this.specTools.applySpecPatch(
+          {
+            expected_version: current.version,
+            change_reason: '保存真实澄清提交证据',
+            operations: records.slice(offset, offset + 20).map((a) => ({
+              op: 'record_evidence' as const,
+              id: `E-${String(++next).padStart(3, '0')}`,
+              kind: 'clarification' as const,
+              summary: a.summary,
+              locator: a.locator,
+            })),
+          },
+          true,
+        );
+      }
+    }
+  }
+
+  /** 入口模型通过后才开放业务写入，并保存带真实提交证据的稳定运行起点。 */
+  admitClarification(): void {
+    if (this.current.status !== 'running') throw new Error('当前没有运行中的轮次');
+    const session = this.current;
+    const specStore = this.require().specStore;
+    try {
+      this.prepareClarificationEvidence(session, session.active_request ?? '');
+      this.persist(this.current);
+      this.clarificationTurn = true;
+    } catch (error) {
+      specStore.restoreHistory(session.spec_versions);
+      throw error;
+    }
+  }
+
+  beginTurn(request: string, processClarification = false): void {
     const session = this.current;
     if (!request.trim()) throw new Error('用户请求不能为空');
     if (!['waiting_for_user', 'interrupted'].includes(session.status))
       throw new Error('当前状态不能开始新轮次');
     const specStore = this.require().specStore;
     try {
-      // 已提交答案的证据由宿主创建，模型只能引用；草稿不进入 Spec。
-      const spec = this.currentSpec();
-      const answers = isClarificationStopRequest(request)
-        ? []
-        : session.clarification_plan.answers.filter(
-            (a) =>
-              a.submission_id && !spec.evidence.some((e) => e.locator === `clarification:${a.id}`),
-          );
-      const pendingSubmission = session.clarification_plan.submissions.some(
-        (s) => s.status === 'pending',
-      );
-      const notes = isClarificationStopRequest(request)
-        ? []
-        : session.clarification_plan.submissions.filter(
-            (s) =>
-              s.note.trim() &&
-              !spec.evidence.some((e) => e.locator === `clarification-note:${s.id}`),
-          );
-      if (
-        !isClarificationStopRequest(request) &&
-        (answers.length || pendingSubmission) &&
-        ['ready_for_approval', 'approved'].includes(spec.status)
-      ) {
-        this.specTools.applySpecPatch({
-          expected_version: spec.version,
-          change_reason: '用户提交新的澄清信息，撤回旧的准备状态',
-          operations: [{ op: 'set_spec_metadata', title: null, status: 'revised' }],
-        });
-      }
-      if (answers.length || notes.length) {
-        let next = Math.max(0, ...spec.evidence.map((e) => Number(e.id.slice(2))));
-        const records = [
-          ...answers.map((a) => ({
-            summary: `用户选项：${a.answer.selected_option_id ?? '未选择'}\n用户补充：${a.answer.free_text ?? '无'}`,
-            locator: `clarification:${a.id}`,
-          })),
-          ...notes.map((s) => ({ summary: s.note, locator: `clarification-note:${s.id}` })),
-        ];
-        for (let offset = 0; offset < records.length; offset += 20) {
-          const current = this.currentSpec();
-          this.specTools.applySpecPatch(
-            {
-              expected_version: current.version,
-              change_reason: '保存真实澄清提交证据',
-              operations: records.slice(offset, offset + 20).map((a) => ({
-                op: 'record_evidence' as const,
-                id: `E-${String(++next).padStart(3, '0')}`,
-                kind: 'clarification' as const,
-                summary: a.summary,
-                locator: a.locator,
-              })),
-            },
-            true,
-          );
-        }
-      }
+      this.clarificationTurn = processClarification && !isClarificationStopRequest(request);
+      if (this.clarificationTurn) this.prepareClarificationEvidence(session, request);
       // 先保存稳定运行起点；失败不能把未配对 tool_use 写为恢复点。
       this.persist({
         ...this.current,
@@ -245,7 +264,7 @@ export class SessionManager {
 
   completeTurn(): void {
     if (this.require().record.status !== 'running') throw new Error('当前没有运行中的轮次');
-    this.clarification.markRetry();
+    if (this.clarificationTurn) this.clarification.markRetry();
     this.persist({
       ...this.current,
       status: 'waiting_for_user',
@@ -266,7 +285,7 @@ export class SessionManager {
     };
     this.store.save(interrupted);
     this.activate(interrupted);
-    this.clarification.markRetry();
+    if (this.clarificationTurn) this.clarification.markRetry();
     this.persist(this.current);
   }
 }

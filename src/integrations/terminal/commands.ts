@@ -14,6 +14,14 @@ export const commands = [
   '/quit',
 ] as const;
 export type CommandResult = 'not_command' | 'handled' | 'session_changed' | 'quit' | 'compact';
+/** 无参入口只展示已有进度，不能从聊天历史推测要处理的需求。 */
+export function hasClarificationProgress(manager: SessionManager): boolean {
+  const spec = manager.currentSpec();
+  const plan = manager.clarification.get();
+  return (
+    !!spec.goal || !!spec.requirements.length || !!plan.rounds.length || !!plan.questions.length
+  );
+}
 export function statusText(manager: SessionManager): string {
   const session = manager.current;
   const spec = manager.currentSpec();
@@ -29,7 +37,8 @@ export function handleSessionCommand(
   const [name, ...parts] = query.trim().split(/\s+/);
   const command = name?.toLowerCase();
   const argument = parts.join(' ');
-  if (!command?.startsWith('/') || command === '/done') return 'not_command';
+  if (!command?.startsWith('/') || command === '/done' || (command === '/clarify' && argument))
+    return 'not_command';
   if (manager.current.status === 'running') {
     emit('Agent 运行中不能执行 Session 命令。');
     return 'handled';

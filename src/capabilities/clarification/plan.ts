@@ -1,11 +1,10 @@
 import { z } from 'zod';
-import { newId, type Specification, utcNow } from '../spec/models.js';
+import { newId, type Specification, specEntities, utcNow } from '../spec/models.js';
 import type { ClarificationAnswer } from './models.js';
 import {
   type ClarificationPlan,
   type ClarificationQuestion,
   editAnswerSchema,
-  emptyPlan,
   clarificationIdSchema as key,
   type PublishRound,
   planSchema,
@@ -34,7 +33,7 @@ export class ClarificationPlanService {
     private readonly read: () => ClarificationPlan,
     private readonly write: (plan: ClarificationPlan) => void,
     private readonly spec: () => Specification,
-    private readonly published: () => void = () => undefined,
+    private readonly published: (hasQuestions: boolean) => void = () => undefined,
   ) {}
   get(): ClarificationPlan {
     return structuredClone(this.read());
@@ -49,15 +48,7 @@ export class ClarificationPlanService {
     return q;
   }
   private entities(spec = this.spec()) {
-    return [
-      ...spec.goals,
-      ...spec.scope,
-      ...spec.requirements,
-      ...spec.decisions,
-      ...spec.assumptions,
-      ...spec.open_questions,
-      ...spec.acceptance_criteria,
-    ];
+    return specEntities(spec);
   }
   private grounded(q: ClarificationQuestion, plan: ClarificationPlan): boolean {
     const spec = this.spec();
@@ -97,11 +88,7 @@ export class ClarificationPlanService {
     plan.topics = patch.topics;
     plan.questions = patch.questions.map((incoming) => {
       const old = plan.questions.find((q) => q.id === incoming.id);
-      if (
-        incoming.spec_entity_ids.some((id) => !entityIds.has(id)) ||
-        (incoming.open_question_id &&
-          !this.spec().open_questions.some((q) => q.id === incoming.open_question_id))
-      )
+      if (incoming.spec_entity_ids.some((id) => !entityIds.has(id)))
         throw new ClarificationPlanError('问题 Spec 引用无效');
       const changed =
         !!old &&
@@ -120,25 +107,9 @@ export class ClarificationPlanService {
           (changed || !this.grounded(q, plan))
         )
           throw new ClarificationPlanError('解决问题必须关联有效回答或仓库证据');
-        if (incoming.open_question_id) {
-          const oq = this.spec().open_questions.find((o) => o.id === incoming.open_question_id);
-          if (oq?.lifecycle === 'active' && oq.status !== 'resolved')
-            throw new ClarificationPlanError('关联 OpenQuestion 未解决');
-        }
       } else if (incoming.status === 'pending' && old) {
         q.status = changed ? 'review_needed' : old.status === 'inactive' ? 'pending' : old.status;
       }
-      if (
-        incoming.status === 'inactive' &&
-        incoming.open_question_id &&
-        this.spec().open_questions.some(
-          (oq) =>
-            oq.id === incoming.open_question_id &&
-            oq.lifecycle === 'active' &&
-            oq.status === 'open',
-        )
-      )
-        throw new ClarificationPlanError('不适用问题必须停用关联的 OpenQuestion');
       return q;
     });
     // 模型只能安排已成熟且依赖已解决的问题；暂缓事项需用户显式恢复或有效依赖变化。
@@ -201,7 +172,7 @@ export class ClarificationPlanService {
       if (!plan.question_history.some((old) => old.id === q.id && old.version === q.version))
         plan.question_history.push(structuredClone(q));
     this.save(plan);
-    this.published();
+    this.published(patch.question_ids.length > 0);
     return JSON.stringify({
       status: 'clarification_round_ready',
       version: plan.version,
@@ -380,33 +351,6 @@ export class ClarificationPlanService {
       });
     return issues;
   }
-}
-
-/** 将旧 Spec 问题投影到总览；保留业务 ID 与决策关系，成熟问题由下一轮补充选项。 */
-export function planFromSpec(spec: Specification): ClarificationPlan {
-  const plan = emptyPlan();
-  const questions = spec.open_questions.filter((q) => q.lifecycle === 'active');
-  if (!questions.length) return plan;
-  plan.topics.push({
-    id: 'legacy',
-    title: '已有需求事项',
-    needs_detail: questions.some((q) => q.status === 'open'),
-  });
-  plan.questions = questions.map((q) => ({
-    id: q.id,
-    topic_id: 'legacy',
-    statement: q.statement,
-    blocking: q.blocking,
-    depends_on: [],
-    input: null,
-    version: 1,
-    open_question_id: q.id,
-    spec_entity_ids: q.resolution_decision_id ? [q.resolution_decision_id] : [],
-    status: q.status === 'resolved' ? 'resolved' : 'pending',
-    change_reason: '从 v1 Session 导入',
-  }));
-  plan.question_history = structuredClone(plan.questions);
-  return planSchema.parse(plan);
 }
 
 export function questionRequest(q: ClarificationQuestion) {

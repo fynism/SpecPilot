@@ -39,18 +39,21 @@ export function buildDefaultRegistry(
     '列出仓库中的文件，用于低成本了解目录结构；不会读取文件正文。',
     listInputSchema,
     (i) => repository.listFiles(i),
+    true,
   );
   registry.register(
     'search_repository',
     '在仓库的 UTF-8 文本文件中搜索普通字符串，并返回文件、行号和片段。',
     searchInputSchema,
     (i) => repository.search(i),
+    true,
   );
   registry.register(
     'read_repository_file',
     '读取仓库内一个 UTF-8 文本文件的指定行范围；不能访问仓库外路径。',
     readInputSchema,
     (i) => repository.readFile(i),
+    true,
   );
   if (plan) {
     registry.register(
@@ -58,10 +61,11 @@ export function buildDefaultRegistry(
       '读取当前澄清总览、轮次、真实回答历史与待复核事项。',
       z.strictObject({}),
       () => JSON.stringify(plan.get()),
+      true,
     );
     registry.register(
       'publish_clarification_round',
-      '按预期版本更新完整总览并发布最多五个本轮问题，默认三个；保留所有旧 ID。此工具不会等待用户，成功后立即结束本轮，必须最后调用。解决问题必须关联真实证据；不得把推荐当作回答。',
+      '按预期版本更新完整总览并发布一至三个本轮关键问题；按依赖和优先级自适应，不填充问题。保留所有旧 ID。此工具不会等待用户，成功后立即结束本轮，必须最后调用。解决问题必须关联真实证据；不得把推荐当作回答。',
       publishRoundSchema,
       (i) => {
         try {
@@ -86,8 +90,12 @@ export function buildDefaultRegistry(
     );
   }
   const empty = z.strictObject({});
-  registry.register('get_spec', '读取当前 Specification 最新版本的完整结构化事实。', empty, () =>
-    spec.getSpec(),
+  registry.register(
+    'get_spec',
+    '读取当前 Specification 最新版本的完整结构化事实。',
+    empty,
+    () => spec.getSpec(),
+    true,
   );
   registry.register(
     'apply_spec_patch',
@@ -107,6 +115,7 @@ export function buildDefaultRegistry(
     '确定性检查当前 Specification 的目标、阻塞问题和需求验收覆盖，返回是否具备进入人工批准阶段的条件。',
     empty,
     () => spec.validateSpec(),
+    true,
   );
   const exporter = new SpecExporter(root);
   registry.register(

@@ -15,7 +15,6 @@ import { InMemorySpecStore } from '../src/capabilities/spec/store.js';
 import { validateSpecification } from '../src/capabilities/spec/validation.js';
 import { LocalSessionStore } from '../src/integrations/filesystem/session-store.js';
 import { SessionManager } from '../src/runtime/session/manager.js';
-import { sessionSchema } from '../src/runtime/session/models.js';
 
 const roots: string[] = [];
 function temporary(): string {
@@ -35,13 +34,7 @@ const coveredPatch = {
       op: 'put_requirement',
       id: 'R-001',
       statement: '管理员导出',
-      acceptance_criterion_ids: ['AC-001'],
-    },
-    {
-      op: 'put_acceptance_criterion',
-      id: 'AC-001',
-      statement: '获得文件',
-      requirement_ids: ['R-001'],
+      acceptance_examples: ['管理员获得 CSV 文件'],
     },
     {
       op: 'record_evidence',
@@ -67,9 +60,10 @@ describe('Spec 原子语义与版本', () => {
     const result = JSON.parse(service.applySpecPatch(patchSchema.parse(coveredPatch)));
     expect(result.version).toBe(2);
     expect(validateSpecification(result).ready_for_approval).toBe(true);
-    expect(service.store.get(service.specId, 1).goals).toEqual([]);
-    result.goals[0].statement = '意外修改';
-    expect(service.currentSpec().goals[0]?.statement).toBe('导出数据');
+    expect(service.store.get(service.specId, 1).goal).toBeNull();
+    if (!result.goal) throw new Error('缺少目标');
+    result.goal.statement = '意外修改';
+    expect(service.currentSpec().goal?.statement).toBe('导出数据');
     expect(() => service.applySpecPatch(patchSchema.parse(coveredPatch))).toThrow('版本冲突');
   });
   it.each(
@@ -103,11 +97,10 @@ describe('Spec 原子语义与版本', () => {
       ],
       [
         {
-          op: 'put_acceptance_criterion',
-          id: 'AC-001',
-          statement: '验收',
-          requirement_ids: ['R-001'],
-          given: '前提',
+          op: 'put_boundary',
+          id: 'S-001',
+          statement: '范围',
+          disposition: 'invalid',
         },
       ],
       [{ op: 'retire_item', id: 'G-001' }],
@@ -122,25 +115,20 @@ describe('Spec 原子语义与版本', () => {
     ).toThrow();
     expect(service.currentSpec()).toEqual(original);
   });
-  it('退休保留原实体和旧版本，阻塞问题阻止批准', () => {
+  it('退休保留原实体和旧版本，缺少需求时不能就绪', () => {
     const service = SpecToolService.create();
     service.applySpecPatch(patchSchema.parse(coveredPatch));
     service.applySpecPatch(
       patchSchema.parse({
         expected_version: 2,
-        change_reason: '新增阻塞',
-        operations: [
-          { op: 'put_open_question', id: 'OQ-001', statement: '权限不确定', blocking: true },
-          { op: 'retire_item', id: 'AC-001' },
-        ],
+        change_reason: '退休需求',
+        operations: [{ op: 'retire_item', id: 'R-001' }],
       }),
     );
     const report = validateSpecification(service.currentSpec());
     expect(report.ready_for_approval).toBe(false);
-    expect(report.issues.map((i) => i.code)).toEqual(
-      expect.arrayContaining(['blocking_open_question', 'inactive_acceptance']),
-    );
-    expect(service.store.get(service.specId, 2).acceptance_criteria[0]?.lifecycle).toBe('active');
+    expect(report.issues.map((i) => i.code)).toContain('missing_requirement');
+    expect(service.store.get(service.specId, 2).requirements[0]?.lifecycle).toBe('active');
   });
   it('Store 拒绝重复、断续历史、修改创建时间与不存在版本', () => {
     const store = new InMemorySpecStore();
@@ -172,7 +160,7 @@ describe('Spec 原子语义与版本', () => {
     expect(spec.version).toBe(2);
     const markdown = readFileSync(join(root, paths.markdown_path), 'utf8');
     expect(markdown).toBe(renderSpecMarkdown(spec));
-    expect(markdown).toContain('### AC-001');
+    expect(markdown).toContain('### R-001');
   });
 });
 
@@ -308,7 +296,7 @@ describe('Session 持久化与恢复', () => {
     const store = new LocalSessionStore(root);
     const manager = new SessionManager(store);
     const session = manager.start();
-    const path = join(root, `.specpilot/sessions/${session.session_id}/session.json`);
+    const path = join(root, `.specpilot/sessions-v5/${session.session_id}/session.json`);
     const original = readFileSync(path, 'utf8');
     expect(() => store.save({ ...session, status: 'running' })).toThrow();
     expect(readFileSync(path, 'utf8')).toBe(original);
@@ -316,31 +304,25 @@ describe('Session 持久化与恢复', () => {
     writeFileSync(path, '{broken');
     expect(() => new SessionManager(store).start()).toThrow('损坏');
   });
-  it('Python 快照可以加载、改名、追加轮次和 Spec 版本，再次恢复', () => {
+  it('v5 快照可以加载、改名、追加轮次和 Spec 版本，再次恢复', () => {
     const root = temporary();
     const store = new LocalSessionStore(root);
-    const original = sessionSchema.parse(
-      JSON.parse(
-        readFileSync(new URL('./fixtures/python-session-v1.json', import.meta.url), 'utf8'),
-      ),
-    );
-    store.save(original);
-    store.setActive(original.session_id);
     const manager = new SessionManager(store);
     manager.start();
+    const original = manager.current;
     manager.rename('迁移后');
     manager.beginTurn('新需求');
     manager.specTools.applySpecPatch(
       patchSchema.parse({
-        expected_version: 2,
-        change_reason: '迁移后修改',
+        expected_version: 1,
+        change_reason: '新增需求',
         operations: [{ op: 'put_requirement', id: 'R-001', statement: '保留原功能' }],
       }),
     );
     manager.completeTurn();
     const restored = new SessionManager(store);
     restored.start();
-    expect(restored.currentSpec().version).toBe(3);
+    expect(restored.currentSpec().version).toBe(2);
     expect(restored.current.title).toBe('迁移后');
     expect(restored.current.spec_versions[0]).toEqual(original.spec_versions[0]);
   });

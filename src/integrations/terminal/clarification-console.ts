@@ -7,6 +7,7 @@ import {
 import { isClarificationStopRequest } from '../../capabilities/clarification/policy.js';
 import { ClarificationCancelled } from '../../capabilities/clarification/tool.js';
 import { newId } from '../../capabilities/spec/models.js';
+import type { StopReason } from '../../runtime/agent.js';
 import type { SessionManager } from '../../runtime/session/manager.js';
 import { type TextKey, translate } from './i18n.js';
 
@@ -16,7 +17,7 @@ export async function runClarificationConsole(
   read: () => Promise<string | null>,
   emit: (text: string) => void,
   presenter: ClarificationPresenter,
-  run: (query: string) => Promise<void>,
+  run: (query: string) => Promise<StopReason | 'stop' | undefined>,
 ): Promise<void> {
   let all = false;
   while (true) {
@@ -75,12 +76,16 @@ export async function runClarificationConsole(
         return;
       }
       if (value === 'r') {
-        await run(manager.retryClarification());
+        const reason = await run(manager.retryClarification());
+        if (reason === 'clarification_completed' || reason === 'clarification_incomplete') return;
         continue;
       }
       if (value === 'c') {
         const query = manager.submitClarification(newId('SUBMIT'), note);
-        if (query) await run(query);
+        if (query) {
+          const reason = await run(query);
+          if (reason === 'clarification_completed' || reason === 'clarification_incomplete') return;
+        }
         continue;
       }
       const match = /^(?:(d|h)\s+)?(\d+)$/.exec(value);

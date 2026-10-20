@@ -17,13 +17,14 @@ import { HookRegistry } from '../src/runtime/hooks.js';
 import { ContextLimitError, type Message, type ModelClient } from '../src/runtime/model.js';
 import { SessionManager } from '../src/runtime/session/manager.js';
 import { sessionSchema } from '../src/runtime/session/models.js';
-import { compactSession, runSessionTurn } from '../src/runtime/turn.js';
+import { compactSession } from '../src/runtime/turn.js';
 import { ToolExecutor } from '../src/tooling/executor.js';
 import { ToolRegistry } from '../src/tooling/registry.js';
 import {
   call,
   completePatch,
   recommendedPresenter,
+  runClarificationTurn as runSessionTurn,
   ScriptedClient,
   temporaryManager,
 } from './helpers.js';
@@ -287,7 +288,7 @@ describe('上下文压缩确定性边界与离线场景 Eval', () => {
   });
   it('长工具循环在完整配对后自动压缩，下一组仍有完整调用结果', async () => {
     const registry = new ToolRegistry();
-    registry.register('large', '大结果', z.strictObject({}), () => '资料'.repeat(15_000));
+    registry.register('large', '大结果', z.strictObject({}), () => '资料'.repeat(15_000), true);
     const hooks = new HookRegistry();
     let calls = 0;
     const client: ModelClient = {

@@ -18,7 +18,6 @@ describe('跨轮澄清结构契约', () => {
       statement: '使用者',
       blocking: true,
       depends_on: ['missing'],
-      open_question_id: null,
       spec_entity_ids: [],
       version: 1,
       status: 'pending',

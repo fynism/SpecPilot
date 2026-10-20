@@ -3,6 +3,7 @@ import type { ToolSpec } from './contracts.js';
 
 interface RegisteredTool {
   spec: ToolSpec;
+  readOnly: boolean;
   handler(input: unknown): string | Promise<string>;
 }
 
@@ -14,10 +15,12 @@ export class ToolRegistry {
     description: string,
     schema: S,
     handler: (input: z.output<S>) => string | Promise<string>,
+    readOnly = false,
   ): void {
     if (!/^[a-z][a-z0-9_]*$/.test(name) || !description) throw new Error('工具声明无效');
     if (this.tools.has(name)) throw new Error(`工具重复注册：${name}`);
     this.tools.set(name, {
+      readOnly,
       spec: { name, description, inputSchema: schema },
       handler: (input) => handler(input as z.output<S>),
     });
@@ -27,7 +30,9 @@ export class ToolRegistry {
     if (!tool) throw new Error(`未知工具：${name}`);
     return tool;
   }
-  toolSpecs(): ToolSpec[] {
-    return [...this.tools.values()].map((tool) => tool.spec);
+  toolSpecs(readOnly = false): ToolSpec[] {
+    return [...this.tools.values()]
+      .filter((tool) => !readOnly || tool.readOnly)
+      .map((tool) => tool.spec);
   }
 }

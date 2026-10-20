@@ -15,7 +15,6 @@ const questionShape = {
   statement: text,
   blocking: z.boolean(),
   depends_on: z.array(clarificationIdSchema).max(30),
-  open_question_id: z.string().nullable(),
   spec_entity_ids: z.array(z.string()).max(50),
 };
 const questionSchema = z.strictObject({
@@ -48,7 +47,7 @@ export const planSchema = z
     rounds: z.array(
       z.strictObject({
         id: clarificationIdSchema,
-        question_ids: z.array(clarificationIdSchema).max(5),
+        question_ids: z.array(clarificationIdSchema).max(3),
         summary: text,
       }),
     ),
@@ -132,7 +131,7 @@ export const publishRoundSchema = z.strictObject({
       }),
     )
     .max(200),
-  question_ids: z.array(clarificationIdSchema).max(5),
+  question_ids: z.array(clarificationIdSchema).max(3),
   summary: text,
 });
 export type PublishRound = z.infer<typeof publishRoundSchema>;

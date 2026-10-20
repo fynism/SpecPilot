@@ -16,7 +16,6 @@ export const initialRound = (): PublishRound => ({
     statement: id === 'users' ? '谁可以导出？' : '需要哪些文件？',
     blocking: true,
     depends_on: [],
-    open_question_id: null,
     spec_entity_ids: [],
     status: 'pending',
     change_reason: '基础需求优先',

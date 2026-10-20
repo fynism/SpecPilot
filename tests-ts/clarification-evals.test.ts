@@ -6,9 +6,14 @@ import { buildSessionRuntime } from '../src/bootstrap.js';
 import { loadSettings } from '../src/config.js';
 import { AnthropicModelClient } from '../src/integrations/anthropic/model.js';
 import type { ModelClient } from '../src/runtime/model.js';
-import { runSessionTurn } from '../src/runtime/turn.js';
 import type { ToolCall } from '../src/tooling/contracts.js';
-import { call, recommendedPresenter, ScriptedClient, temporaryManager } from './helpers.js';
+import {
+  call,
+  recommendedPresenter,
+  runClarificationTurn as runSessionTurn,
+  ScriptedClient,
+  temporaryManager,
+} from './helpers.js';
 import { answer, currentPatch, initialRound } from './round-helpers.js';
 
 const settings = { api_key: 'offline', model: 'fake', max_tool_use_turns: 20 };

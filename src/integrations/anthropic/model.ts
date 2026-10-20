@@ -1,7 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk';
 import type { MessageParam, Tool } from '@anthropic-ai/sdk/resources/messages';
 import { z } from 'zod';
-import type { Settings } from '../../config.js';
+import { assertRunnableSettings, type Settings } from '../../config.js';
 import {
   ContextLimitError,
   type Message,
@@ -39,6 +39,7 @@ export class AnthropicModelClient implements ModelClient {
   private readonly client: Anthropic;
   private usage: TokenUsage | null = null;
   private countingUnsupported = false;
+  private assistantThinkingCountUnsupported = false;
   get lastUsage(): TokenUsage | null {
     return this.usage;
   }
@@ -47,6 +48,7 @@ export class AnthropicModelClient implements ModelClient {
     client?: Anthropic,
     private readonly onUsage?: (usage: { input_tokens: number; output_tokens: number }) => void,
   ) {
+    assertRunnableSettings(settings);
     this.client =
       client ??
       new Anthropic({
@@ -59,7 +61,9 @@ export class AnthropicModelClient implements ModelClient {
     tools: ToolSpec[],
     system: string,
   ): Promise<number | null> {
-    if (this.countingUnsupported) return null;
+    const assistantWithTools = tools.length > 0 && messages.at(-1)?.role === 'assistant';
+    if (this.countingUnsupported || (assistantWithTools && this.assistantThinkingCountUnsupported))
+      return null;
     try {
       const specs = declarations(tools);
       const response = await this.client.messages.countTokens(
@@ -77,7 +81,24 @@ export class AnthropicModelClient implements ModelClient {
         this.countingUnsupported = true;
         return null;
       }
-      throw new TokenCountError('供应商 Token 计数失败，请检查服务连接或稍后重试。', {
+      // 部分兼容服务把 assistant 收尾视为 thinking 预填充，带工具时拒绝该计数格式。
+      // 只识别已复现的明确内容校验错误，不修改消息、伪造思考或关闭生成的 thinking。
+      // 缓存仅作用于此消息组合；追加 user 后仍精确计数，其他 400 一律继续报错。
+      if (
+        assistantWithTools &&
+        error instanceof Anthropic.APIError &&
+        error.status === 400 &&
+        /thinking/i.test(error.message) &&
+        /content/i.test(error.message) &&
+        /invalid|must|prefill|prefix/i.test(error.message)
+      ) {
+        this.assistantThinkingCountUnsupported = true;
+        return null;
+      }
+      // 仅暴露 HTTP 状态供定位代理/服务问题；响应正文、请求、密钥不进入提示。
+      const status =
+        error instanceof Anthropic.APIError && error.status ? `（HTTP ${error.status}）` : '';
+      throw new TokenCountError(`供应商 Token 计数失败${status}，请检查服务连接或稍后重试。`, {
         cause: error,
       });
     }

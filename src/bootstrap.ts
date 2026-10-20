@@ -11,7 +11,7 @@ import {
 } from './runtime/context/index.js';
 import { buildDefaultHooks } from './runtime/hooks.js';
 import type { ModelClient } from './runtime/model.js';
-import { ROUND_SYSTEM, SYSTEM } from './runtime/prompts.js';
+import { CHAT_SYSTEM, ROUND_SYSTEM } from './runtime/prompts.js';
 import type { SessionManager } from './runtime/session/manager.js';
 import { MeteredModelClient } from './runtime/usage.js';
 import { buildDefaultRegistry } from './tooling/catalog.js';
@@ -34,8 +34,8 @@ export function buildContextUsageReader(
     () => undefined,
     clarificationMode === 'rounds' ? manager.clarificationService() : undefined,
   );
-  const tools = registry.toolSpecs();
-  const system = clarificationMode === 'rounds' ? ROUND_SYSTEM : SYSTEM;
+  const tools = registry.toolSpecs(true);
+  const system = CHAT_SYSTEM;
   return () => {
     const messages = buildContextMessages(manager.messages, manager.context, manager.currentSpec());
     const measurement = manager.contextMeasurement;
@@ -67,8 +67,9 @@ export function buildSessionRuntime(
   let ready = false;
   const plan =
     clarificationMode === 'rounds'
-      ? manager.clarificationService(() => {
+      ? manager.clarificationService((hasQuestions) => {
           ready = true;
+          manager.specTools.finishClarificationRound(hasQuestions);
         })
       : undefined;
   const registry = buildDefaultRegistry(root, manager.specTools, presenter, hooks.trigger, plan);

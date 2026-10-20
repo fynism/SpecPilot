@@ -17,6 +17,7 @@ import {
   buildLegacySessionRuntime as buildSessionRuntime,
   call,
   clarification,
+  readyIntake,
   ScriptedClient,
   temporaryManager,
 } from './helpers.js';
@@ -333,7 +334,7 @@ describe('Ink Session、语言与对话', () => {
       await type(screen, '继续任务');
       screen.stdin.write('\r');
       await frame(screen, '压缩后继续成功');
-      expect(exposed).toEqual([0, 8]);
+      expect(exposed).toEqual([0, 5]);
       expect(fixture.manager.current.status).toBe('waiting_for_user');
       await type(screen, '/language en-US');
       screen.stdin.write('\r');
@@ -382,6 +383,7 @@ describe('Ink Session、语言与对话', () => {
     const fixture = temporaryManager();
     try {
       const client = new ScriptedClient([
+        readyIntake,
         [call('q', 'request_clarification', clarification)],
         [{ type: 'text', text: '取消后返回' }],
       ]);
@@ -394,7 +396,7 @@ describe('Ink Session、语言与对话', () => {
         />,
       );
       await frame(screen, '等待输入');
-      await type(screen, '需求');
+      await type(screen, '/clarify 导出功能');
       screen.stdin.write('\r');
       await frame(screen, '谁可以导出');
       screen.stdin.write('\u0011');
@@ -519,6 +521,7 @@ describe('Ink Session、语言与对话', () => {
     const fixture = temporaryManager();
     try {
       const client = new ScriptedClient([
+        readyIntake,
         [call('q', 'request_clarification', clarification)],
         [{ type: 'text', text: '已收到回答' }],
       ]);
@@ -531,7 +534,7 @@ describe('Ink Session、语言与对话', () => {
         />,
       );
       await frame(screen, '等待输入');
-      await type(screen, '导出需求');
+      await type(screen, '/clarify 导出需求');
       screen.stdin.write('\r');
       await frame(screen, '谁可以导出');
       await type(screen, '只支持本页');
@@ -583,7 +586,7 @@ describe('非 TTY 与 npm CLI 入口', () => {
       expect(output).toContain('/ 500,000 tokens');
       expect(output).not.toContain('\u001b');
       expect(fixture.manager.messages).toHaveLength(count + 2);
-      expect(client.exposedTools.map((t) => t.length)).toEqual([0, 8]);
+      expect(client.exposedTools.map((t) => t.length)).toEqual([0, 5]);
     } finally {
       fixture.cleanup();
     }
@@ -592,6 +595,7 @@ describe('非 TTY 与 npm CLI 入口', () => {
     const fixture = temporaryManager();
     try {
       const client = new ScriptedClient([
+        readyIntake,
         [call('q', 'request_clarification', clarification)],
         [{ type: 'text', text: '管道回答已收到' }],
       ]);
@@ -606,13 +610,13 @@ describe('非 TTY 与 npm CLI 入口', () => {
         fixture.manager,
         (presenter, emit) =>
           buildSessionRuntime(fixture.manager, fixture.root, settings, presenter, emit, client),
-        Readable.from(['/new 管道会话\n/status\n导出需求\n2\n/switch\nq\n/quit\n']),
+        Readable.from(['/new 管道会话\n/status\n/clarify 导出需求\n2\n/switch\nq\n/quit\n']),
         stdout,
       );
       expect(output).toContain('管道回答已收到');
       expect(output).not.toContain('\u001b');
       expect(fixture.manager.current.title).toBe('管道会话');
-      expect(client.exposedTools).toHaveLength(2);
+      expect(client.exposedTools).toHaveLength(3);
     } finally {
       fixture.cleanup();
     }
@@ -634,7 +638,13 @@ describe('非 TTY 与 npm CLI 入口', () => {
             cwd: fixture.root,
             input,
             encoding: 'utf8',
-            env: { ...process.env, ANTHROPIC_API_KEY: 'offline', MODEL_ID: 'fake' },
+            env: {
+              ...process.env,
+              HOME: fixture.root,
+              USERPROFILE: fixture.root,
+              ANTHROPIC_API_KEY: 'offline',
+              MODEL_ID: 'fake',
+            },
           },
         );
       const help = invoke(['--help']);
